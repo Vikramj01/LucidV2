@@ -63,7 +63,7 @@ async function run() {
     process.exit(1)
   }
 
-  const { id: runId, status, job_id } = await res.json()
+  const { id: runId, status, job_id } = (await res.json()) as { id: string; status: string; job_id: string }
   console.log(`✓ agent_run created: id=${runId}, status=${status}, job_id=${job_id}`)
 
   if (status !== 'queued') {

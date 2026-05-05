@@ -187,5 +187,37 @@ export const api = {
       request<unknown>(`/workspaces/${workspaceId}/playbooks/${pbId}/approve`, {
         method: 'PATCH',
       }),
+
+    exportPlaybook: (workspaceId: string, pbId: string, format: 'markdown' | 'json' = 'json') =>
+      request<unknown>(`/workspaces/${workspaceId}/playbooks/${pbId}/export?format=${format}`),
+  },
+
+  admin: {
+    getStats: () =>
+      request<{
+        total_organisations: number
+        total_users: number
+        total_agent_runs: number
+        total_credits_used: number
+      }>('/admin/stats'),
+
+    listOrganisations: () =>
+      request<Array<{ id: string; name: string; org_type: string; credit_balance: number; credit_cap: number; created_at: string; workspaces: Array<{ id: string }> }>>('/admin/organisations'),
+
+    listUsers: () =>
+      request<Array<{ id: string; email: string; full_name: string | null; role: string; org_id: string | null; created_at: string }>>('/admin/users'),
+  },
+
+  credits: {
+    getOrgCredits: (orgId: string) =>
+      request<{
+        org: { credit_balance: number; credit_cap: number }
+        ledger: Array<{ workspace_id: string; action_type: string; credits_used: number; created_at: string }>
+      }>(`/organisations/${orgId}/credits`),
+
+    getWorkspaceCredits: (workspaceId: string) =>
+      request<{
+        ledger: Array<{ action_type: string; credits_used: number; created_at: string; agent_run_id: string }>
+      }>(`/workspaces/${workspaceId}/credits`),
   },
 }
