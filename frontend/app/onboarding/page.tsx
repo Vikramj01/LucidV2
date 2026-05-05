@@ -2,11 +2,14 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { api, ApiError } from '@/lib/api'
+import { useWorkspaceStore } from '@/store/workspace'
 
 type Step = 'org' | 'workspace'
 
 export default function OnboardingPage() {
   const router = useRouter()
+  const { setWorkspace, setOrg } = useWorkspaceStore()
   const [step, setStep] = useState<Step>('org')
   const [orgName, setOrgName] = useState('')
   const [orgType, setOrgType] = useState<'agency' | 'brand'>('brand')
@@ -19,25 +22,16 @@ export default function OnboardingPage() {
     e.preventDefault()
     setLoading(true)
     setError(null)
-
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/organisations`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: orgName, org_type: orgType }),
-      credentials: 'include',
-    })
-
-    if (!res.ok) {
-      const { error } = await res.json()
-      setError(error)
+    try {
+      const org = await api.organisations.create({ name: orgName, org_type: orgType })
+      setOrg({ id: org.id, name: org.name })
+      setOrgId(org.id)
+      setStep('workspace')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong')
+    } finally {
       setLoading(false)
-      return
     }
-
-    const org = await res.json()
-    setOrgId(org.id)
-    setStep('workspace')
-    setLoading(false)
   }
 
   async function handleWorkspaceSubmit(e: React.FormEvent) {
@@ -45,32 +39,22 @@ export default function OnboardingPage() {
     if (!orgId) return
     setLoading(true)
     setError(null)
-
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/organisations/${orgId}/workspaces`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: workspaceName }),
-        credentials: 'include',
-      }
-    )
-
-    if (!res.ok) {
-      const { error } = await res.json()
-      setError(error)
+    try {
+      const ws = await api.organisations.createWorkspace(orgId, { name: workspaceName })
+      setWorkspace({ id: ws.id, name: ws.name, org_id: ws.org_id })
+      router.push('/dashboard')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong')
+    } finally {
       setLoading(false)
-      return
     }
-
-    router.push('/dashboard')
   }
 
   return (
     <div className="min-h-screen bg-[#0D1117] flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="mb-2 flex gap-2">
-          <div className={`h-1 flex-1 rounded-full ${step === 'org' || step === 'workspace' ? 'bg-[#2D7DD2]' : 'bg-[#30363D]'}`} />
+          <div className="h-1 flex-1 rounded-full bg-[#2D7DD2]" />
           <div className={`h-1 flex-1 rounded-full ${step === 'workspace' ? 'bg-[#2D7DD2]' : 'bg-[#30363D]'}`} />
         </div>
 

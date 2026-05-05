@@ -1,0 +1,299 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---- Enums ----
+
+enum OrgType {
+  agency
+  brand
+
+  @@map("org_type")
+}
+
+enum UserRole {
+  org_admin
+  workspace_member
+  super_admin
+
+  @@map("user_role")
+}
+
+enum UserStatus {
+  active
+  suspended
+  invited
+
+  @@map("user_status")
+}
+
+enum AgentMode {
+  approval_gated
+  autonomous
+
+  @@map("agent_mode")
+}
+
+enum UiTheme {
+  dark
+  light
+
+  @@map("ui_theme")
+}
+
+enum AgentRunStatus {
+  queued
+  running
+  complete
+  failed
+
+  @@map("agent_run_status")
+}
+
+enum AgentType {
+  intel
+  architect
+  builder
+  analyst
+  vault_ingest
+
+  @@map("agent_type")
+}
+
+enum VaultDocStatus {
+  queued
+  processing
+  ready
+  failed
+
+  @@map("vault_doc_status")
+}
+
+enum VaultSourceType {
+  pdf
+  free_text
+
+  @@map("vault_source_type")
+}
+
+enum CampaignGoal {
+  awareness
+  leads
+  pipeline
+  retention
+
+  @@map("campaign_goal")
+}
+
+enum CampaignChannel {
+  linkedin
+  google_search
+  google_display
+  meta
+  email
+
+  @@map("campaign_channel")
+}
+
+enum PlaybookStatus {
+  draft
+  approved
+  archived
+
+  @@map("playbook_status")
+}
+
+enum CreditActionType {
+  intel_run
+  architect_run
+  vault_ingest
+
+  @@map("credit_action_type")
+}
+
+// ---- Models ----
+
+model Organisation {
+  id                 String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name               String
+  orgType            OrgType   @default(brand) @map("org_type")
+  creditBalance      Int       @default(100) @map("credit_balance")
+  creditCap          Int       @default(1000) @map("credit_cap")
+  stripeCustomerId   String?   @map("stripe_customer_id")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  workspaces         Workspace[]
+  profiles           Profile[]
+  creditLedger       CreditLedger[]
+
+  @@map("organisations")
+}
+
+model Workspace {
+  id             String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  orgId          String     @map("org_id") @db.Uuid
+  name           String
+  description    String?
+  agentMode      AgentMode  @default(approval_gated) @map("agent_mode")
+  creditSoftCap  Int?       @map("credit_soft_cap")
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  organisation   Organisation     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  members        WorkspaceMember[]
+  vaultDocuments VaultDocument[]
+  agentRuns      AgentRun[]
+  marketSignals  MarketSignal[]
+  playbooks      CampaignPlaybook[]
+  creditLedger   CreditLedger[]
+
+  @@map("workspaces")
+}
+
+model Profile {
+  id         String      @id @db.Uuid
+  email      String
+  fullName   String?     @map("full_name")
+  avatarUrl  String?     @map("avatar_url")
+  role       UserRole    @default(workspace_member)
+  status     UserStatus  @default(active)
+  orgId      String?     @map("org_id") @db.Uuid
+  uiTheme    UiTheme     @default(dark) @map("ui_theme")
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  organisation       Organisation?      @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  workspaceMembers   WorkspaceMember[]
+  vaultDocuments     VaultDocument[]
+  agentRuns          AgentRun[]
+  approvedPlaybooks  CampaignPlaybook[] @relation("ApprovedBy")
+  creditLedger       CreditLedger[]
+
+  @@map("profiles")
+}
+
+model WorkspaceMember {
+  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspaceId String    @map("workspace_id") @db.Uuid
+  profileId   String    @map("profile_id") @db.Uuid
+  role        UserRole  @default(workspace_member)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  profile     Profile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, profileId])
+  @@map("workspace_members")
+}
+
+model VaultDocument {
+  id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspaceId   String          @map("workspace_id") @db.Uuid
+  name          String
+  sourceType    VaultSourceType @map("source_type")
+  filePath      String?         @map("file_path")
+  fileSizeBytes Int?            @map("file_size_bytes")
+  status        VaultDocStatus  @default(queued)
+  errorMessage  String?         @map("error_message")
+  chunkCount    Int?            @map("chunk_count")
+  createdBy     String          @map("created_by") @db.Uuid
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator     Profile   @relation(fields: [createdBy], references: [id])
+
+  @@map("vault_documents")
+}
+
+model AgentRun {
+  id            String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspaceId   String         @map("workspace_id") @db.Uuid
+  agentType     AgentType      @map("agent_type")
+  status        AgentRunStatus @default(queued)
+  jobId         String?        @map("job_id")
+  inputPayload  Json           @default("{}") @map("input_payload")
+  errorMessage  String?        @map("error_message")
+  creditsUsed   Int            @default(0) @map("credits_used")
+  startedAt     DateTime?      @map("started_at") @db.Timestamptz
+  completedAt   DateTime?      @map("completed_at") @db.Timestamptz
+  triggeredBy   String         @map("triggered_by") @db.Uuid
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  workspace     Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  triggeredByProfile Profile     @relation(fields: [triggeredBy], references: [id])
+  marketSignal  MarketSignal?
+  playbook      CampaignPlaybook?
+  creditLedger  CreditLedger[]
+
+  @@map("agent_runs")
+}
+
+model MarketSignal {
+  id                  String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspaceId         String   @map("workspace_id") @db.Uuid
+  agentRunId          String   @unique @map("agent_run_id") @db.Uuid
+  competitorsAnalysed String[] @map("competitors_analysed")
+  competitorProfiles  Json     @default("[]") @map("competitor_profiles")
+  marketGaps          String[] @map("market_gaps")
+  intentTriggers      String[] @map("intent_triggers")
+  recommendedAngles   String[] @map("recommended_angles")
+  sources             String[]
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agentRun   AgentRun  @relation(fields: [agentRunId], references: [id])
+  playbooks  CampaignPlaybook[]
+
+  @@map("market_signals")
+}
+
+model CampaignPlaybook {
+  id              String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspaceId     String         @map("workspace_id") @db.Uuid
+  agentRunId      String         @unique @map("agent_run_id") @db.Uuid
+  marketSignalId  String?        @map("market_signal_id") @db.Uuid
+  campaignGoal    CampaignGoal   @map("campaign_goal")
+  channels        CampaignChannel[]
+  winningAngle    String         @map("winning_angle")
+  targetPersona   String         @map("target_persona")
+  playbookContent Json           @default("{}") @map("playbook_content")
+  status          PlaybookStatus @default(draft)
+  approvedBy      String?        @map("approved_by") @db.Uuid
+  approvedAt      DateTime?      @map("approved_at") @db.Timestamptz
+  version         Int            @default(1)
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agentRun      AgentRun      @relation(fields: [agentRunId], references: [id])
+  marketSignal  MarketSignal? @relation(fields: [marketSignalId], references: [id])
+  approver      Profile?      @relation("ApprovedBy", fields: [approvedBy], references: [id])
+
+  @@map("campaign_playbooks")
+}
+
+model CreditLedger {
+  id          String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  orgId       String           @map("org_id") @db.Uuid
+  workspaceId String           @map("workspace_id") @db.Uuid
+  profileId   String           @map("profile_id") @db.Uuid
+  agentRunId  String?          @map("agent_run_id") @db.Uuid
+  actionType  CreditActionType @map("action_type")
+  creditsUsed Int              @map("credits_used")
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  organisation Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  profile      Profile      @relation(fields: [profileId], references: [id])
+  agentRun     AgentRun?    @relation(fields: [agentRunId], references: [id])
+
+  @@map("credit_ledger")
+}
