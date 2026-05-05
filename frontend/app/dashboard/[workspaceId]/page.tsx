@@ -1,26 +1,25 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { use } from 'react'
-import { useWorkspaceStore } from '@/store/workspace'
 import { useAgentStore } from '@/store/agent'
+import { useChatStore } from '@/store/chat'
 import { createClient } from '@/lib/supabase/client'
+import { MissionControlCanvas } from '@/components/mission-control/MissionControlCanvas'
+import { VimiChatPanel } from '@/components/chat/VimiChatPanel'
 
-/**
- * Workspace dashboard — placeholder for Sprint 6 Mission Control canvas.
- * Wires up Supabase Realtime subscriptions for agent_runs so the agent
- * store stays live even before the full UI is built.
- */
 export default function WorkspaceDashboardPage({
   params,
 }: {
   params: Promise<{ workspaceId: string }>
 }) {
   const { workspaceId } = use(params)
-  const { workspaceName } = useWorkspaceStore()
-  const { setIntelStatus, setArchitectStatus } = useAgentStore()
+  const { setIntelStatus, setArchitectStatus, intelStatus, architectStatus } = useAgentStore()
+  const { phase, setPhase } = useChatStore()
+  const prevIntelStatus = useRef<string>(intelStatus)
+  const prevArchitectStatus = useRef<string>(architectStatus)
 
-  // Subscribe to agent_runs Realtime for this workspace
+  // Realtime: subscribe to agent_runs changes for this workspace
   useEffect(() => {
     const supabase = createClient()
 
@@ -49,41 +48,43 @@ export default function WorkspaceDashboardPage({
       )
       .subscribe()
 
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    return () => { supabase.removeChannel(channel) }
   }, [workspaceId, setIntelStatus, setArchitectStatus])
 
+  // Auto-advance chat phases on agent completion
+  useEffect(() => {
+    if (
+      prevIntelStatus.current !== 'complete' &&
+      intelStatus === 'complete' &&
+      phase === 'INTEL_RUNNING'
+    ) {
+      setPhase('ARCHITECT_SETUP')
+    }
+    prevIntelStatus.current = intelStatus
+  }, [intelStatus, phase, setPhase])
+
+  useEffect(() => {
+    if (
+      prevArchitectStatus.current !== 'complete' &&
+      architectStatus === 'complete' &&
+      phase === 'ARCHITECT_RUNNING'
+    ) {
+      setPhase('ACTIVE')
+    }
+    prevArchitectStatus.current = architectStatus
+  }, [architectStatus, phase, setPhase])
+
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-6 text-center px-8">
-      <div>
-        <h2 className="text-xl font-semibold text-[#E6EDF3]">
-          {workspaceName ?? 'Your workspace'} is ready
-        </h2>
-        <p className="mt-2 text-sm text-[#8B949E] max-w-md">
-          Mission Control and the Vimi Chat Panel are coming in Sprint 6.
-          The agent pipeline, vault ingestion, and all API routes are live.
-        </p>
+    <div className="flex flex-1 overflow-hidden">
+      {/* Left 40% — Vimi Chat Panel */}
+      <div className="w-[40%] flex flex-col border-r border-[#30363D] overflow-hidden shrink-0">
+        <VimiChatPanel workspaceId={workspaceId} />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 w-full max-w-sm">
-        {[
-          { label: 'Intel Agent', status: 'Ready', color: 'text-[#3FB950]' },
-          { label: 'Architect Agent', status: 'Ready', color: 'text-[#3FB950]' },
-          { label: 'Brand Voice Vault', status: 'Ready', color: 'text-[#3FB950]' },
-          { label: 'Redis Queue', status: 'Ready', color: 'text-[#3FB950]' },
-        ].map((item) => (
-          <div
-            key={item.label}
-            className="rounded-lg border border-[#30363D] bg-[#161B22] px-4 py-3 text-left"
-          >
-            <p className="text-xs text-[#8B949E]">{item.label}</p>
-            <p className={`text-sm font-medium mt-0.5 ${item.color}`}>{item.status}</p>
-          </div>
-        ))}
+      {/* Right 60% — Mission Control Canvas */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <MissionControlCanvas workspaceId={workspaceId} />
       </div>
-
-      <p className="text-xs text-[#484F58]">Workspace ID: {workspaceId}</p>
     </div>
   )
 }
