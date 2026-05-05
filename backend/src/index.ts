@@ -5,6 +5,7 @@ import { healthRouter } from './routes/health'
 import { organisationsRouter } from './routes/organisations'
 import { workspacesRouter } from './routes/workspaces'
 import { vaultRouter } from './routes/vault'
+import { uploadRouter } from './routes/upload'
 import { agentsRouter } from './routes/agents'
 import { outputsRouter } from './routes/outputs'
 import { adminRouter } from './routes/admin'
@@ -24,6 +25,7 @@ app.use('/api', healthRouter)
 app.use('/api/organisations', organisationsRouter)
 app.use('/api/workspaces', workspacesRouter)
 app.use('/api/workspaces/:id/vault', vaultRouter)
+app.use('/api/workspaces/:id/vault', uploadRouter)
 app.use('/api/workspaces/:id/agents', agentsRouter)
 app.use('/api/workspaces/:id', outputsRouter)
 app.use('/api/admin', adminRouter)
