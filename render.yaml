@@ -6,7 +6,7 @@ services:
     region: singapore
     plan: starter
     rootDir: backend
-    buildCommand: npm install && npx prisma generate && npm run build
+    buildCommand: npm install && ./node_modules/.bin/prisma generate && npm run build
     startCommand: node dist/index.js
     healthCheckPath: /api/health
     envVars:
@@ -26,21 +26,22 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
-      - key: UPSTASH_REDIS_URL
-        sync: false
-      - key: UPSTASH_REDIS_TOKEN
+      - key: AGENT_SERVICE_URL
         sync: false
 
-  # ── Agent Service — FastAPI + LangGraph (Background Worker) ──────────────────
-  - type: worker
+  # ── Agent Service — FastAPI + LangGraph (Web Service) ────────────────────────
+  - type: web
     name: lucid-agent-service
     runtime: python
     region: singapore
     plan: starter
     rootDir: agent-service
     buildCommand: pip install -e .
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     envVars:
+      - key: PORT
+        value: "8000"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
@@ -50,8 +51,4 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: FIRECRAWL_API_KEY
-        sync: false
-      - key: UPSTASH_REDIS_URL
-        sync: false
-      - key: UPSTASH_REDIS_TOKEN
         sync: false

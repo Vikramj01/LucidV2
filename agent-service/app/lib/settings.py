@@ -6,8 +6,6 @@ class Settings(BaseSettings):
     anthropic_api_key: str
     openai_api_key: str
     firecrawl_api_key: str
-    upstash_redis_url: str
-    upstash_redis_token: str
     port: int = 8000
 
     class Config:
