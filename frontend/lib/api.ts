@@ -164,10 +164,10 @@ export const api = {
       ),
 
     listRuns: (workspaceId: string) =>
-      request<unknown[]>(`/workspaces/${workspaceId}/agents/runs`),
+      request<unknown[]>(`/workspaces/${workspaceId}/agent-runs`),
 
     getRun: (workspaceId: string, runId: string) =>
-      request<unknown>(`/workspaces/${workspaceId}/agents/runs/${runId}`),
+      request<unknown>(`/workspaces/${workspaceId}/agent-runs/${runId}`),
   },
 
   outputs: {

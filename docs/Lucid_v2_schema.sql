@@ -21,7 +21,7 @@ CREATE TYPE ui_theme AS ENUM ('dark', 'light');
 CREATE TYPE agent_run_status AS ENUM ('queued', 'running', 'complete', 'failed');
 CREATE TYPE agent_type AS ENUM ('intel', 'architect', 'builder', 'analyst', 'vault_ingest');
 CREATE TYPE vault_doc_status AS ENUM ('queued', 'processing', 'ready', 'failed');
-CREATE TYPE vault_source_type AS ENUM ('pdf', 'free_text');
+CREATE TYPE vault_source_type AS ENUM ('pdf', 'url', 'free_text');
 CREATE TYPE campaign_goal AS ENUM ('awareness', 'leads', 'pipeline', 'retention');
 CREATE TYPE campaign_channel AS ENUM ('linkedin', 'google_search', 'google_display', 'meta', 'email');
 CREATE TYPE playbook_status AS ENUM ('draft', 'approved', 'archived');
