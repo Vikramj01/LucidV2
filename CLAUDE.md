@@ -2,7 +2,17 @@
 
 ## What This Is
 
-**Lucid** — Agentic B2B marketing engine. Four AI agents (Intel, Architect, Builder, Analyst) run autonomously per workspace, producing market intelligence, campaign strategy, and multimedia assets.
+**Lucid** — Agentic B2B marketing engine, built on three product pillars:
+
+1. **Strategy** — research and understand the market, define the market, define the ICP(s).
+2. **Channel & Content Selection** — for that market/ICP, recommend the right channel and the right type of content/medium for it.
+3. **Measurement** — connect ad platforms, Google Analytics, and social platforms; pull performance data back in; report on it; close the loop.
+
+Between pillars 2 and 3 is a **handoff gap**, not a build target: the campaign passes to the client's agency, the client themselves, or directly into a platform. Lucid recommends the channel and content — it does not produce the assets or run the campaign itself.
+
+Full framework, current build-vs-gap mapping, and roadmap: **`docs/PRODUCT_FRAMEWORK.md`** — treat it as the product source of truth; this file is the technical/engineering reference.
+
+**What ships today (MVP1):** two agents — **Intel Agent** (Strategy: market research) and **Architect Agent** (Strategy synthesis + Channel & Content Selection, producing a campaign playbook). The handoff pillar is already covered by the existing "Approve + Export" flow. **Measurement (Analyst Agent)** is the next build phase — not yet implemented. The previously-planned **Builder Agent** (in-house asset generation) is retired from the roadmap; see `docs/PRODUCT_FRAMEWORK.md` for why.
 
 **Vimi** — The AI strategist persona. Always use "Vimi" in user-facing copy, never "Claude" or "AI".
 
@@ -46,7 +56,7 @@ Do NOT put agent orchestration logic in the backend. Do NOT put API route handli
 **Split-screen layout — two fixed panels:**
 
 - **Left (40%) — Vimi Chat Panel:** Conversational interface. User talks to Vimi to configure workspaces, approve outputs, and override agent decisions. This is the only input layer.
-- **Right (60%) — Mission Control Canvas:** Real-time view of all agent activity. Shows agent status, Market Signals (Intel), Campaign Playbook (Architect), asset previews (Builder), and performance reads (Analyst). Tabbed by agent. Updates via Supabase Realtime subscriptions — no polling.
+- **Right (60%) — Mission Control Canvas:** Real-time view of all agent activity. Shows agent status, Market Signals (Intel — Strategy), Campaign Playbook with channel/content recommendations and the Approve + Export handoff gate (Architect — Channel & Content Selection + Handoff), and performance reads (Analyst — Measurement, not yet built). Tabbed by agent. Updates via Supabase Realtime subscriptions — no polling.
 
 Human-in-the-loop gates appear in the Mission Control panel, not in chat. User must explicitly approve before any campaign is published or any budget is spent.
 
@@ -58,10 +68,9 @@ Human-in-the-loop gates appear in the Mission Control panel, not in chat. User m
 Organization (payer, holds credit pool)
   └── Workspace (one per client/brand — isolated data)
         ├── Brand Voice Vault (RAG — pgvector)
-        ├── Market Signals (Intel Agent output)
-        ├── Campaign Playbooks (Architect Agent output)
-        ├── Assets (Builder Agent output)
-        └── Performance Logs (Analyst Agent output)
+        ├── Market Signals (Intel Agent output — Strategy pillar)
+        ├── Campaign Playbooks (Architect Agent output — Channel & Content Selection; Approve + Export = Handoff)
+        └── Performance Logs (Analyst Agent output — Measurement pillar, not yet built)
   └── Users (RBAC: org_admin | workspace_member)
 ```
 
@@ -71,11 +80,11 @@ All Supabase queries use Row-Level Security. Never bypass RLS. Never query acros
 
 ## Agent Architecture (MVP1 Scope)
 
-MVP1 includes **Intel Agent and Architect Agent only**. Builder and Analyst are future phases.
+MVP1 includes **Intel Agent and Architect Agent only**, covering the Strategy and Channel & Content Selection pillars. Analyst Agent (Measurement) is the next phase. Builder Agent is retired — see `docs/PRODUCT_FRAMEWORK.md`.
 
-**Intel Agent:** Takes competitor URLs + industry keywords → Firecrawl scrape → structured Market Signal JSON → stored in `market_signals` table.
+**Intel Agent** (Strategy): Takes competitor URLs + industry keywords → Firecrawl scrape → structured Market Signal JSON → stored in `market_signals` table.
 
-**Architect Agent:** Takes Market Signals + Brand Voice Vault context (RAG) → Claude Sonnet → Campaign Playbook markdown → stored in `campaign_playbooks` table.
+**Architect Agent** (Strategy synthesis + Channel & Content Selection): Takes Market Signals + Brand Voice Vault context (RAG) → Claude Sonnet → Campaign Playbook (winning angle/ICP + per-channel content recommendations) → stored in `campaign_playbooks` table. The existing Approve + Export flow on this agent's output fulfills the Handoff pillar.
 
 **Job flow:**
 1. Backend receives trigger (user action in chat)
