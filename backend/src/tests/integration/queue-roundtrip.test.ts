@@ -1,10 +1,11 @@
 /**
  * Integration test: Redis queue → agent_runs DB round-trip.
  *
- * Verifies the full path for triggering an Intel Agent run:
- *   1. POST /api/workspaces/:id/agents/intel/run
- *   2. agent_runs row created in Supabase with status 'queued'
- *   3. Job appears in Upstash Redis queue
+ * Verifies the full path for triggering a Research Agent run:
+ *   1. POST /api/workspaces/:id/projects — create a scratch Project
+ *   2. POST /api/workspaces/:id/projects/:projectId/agents/research/run
+ *   3. agent_runs row created in Supabase with status 'queued', scoped to the project
+ *   4. Job appears in Upstash Redis queue with job_type 'research_run'
  *
  * Run with:
  *   TEST_JWT=<supabase_jwt> \
@@ -39,23 +40,41 @@ async function run() {
   const redis = new Redis({ url: UPSTASH_REDIS_URL, token: UPSTASH_REDIS_TOKEN })
 
   const queueKey = 'lucid:jobs'
+  const authHeaders = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${JWT}`,
+  }
 
-  // ── Step 1: drain any leftover jobs from previous test runs ──
+  // ── Step 1: create a scratch Project to run against ──
+  console.log('→ POST /projects ...')
+  const projectRes = await fetch(`${API_BASE}/workspaces/${WORKSPACE_ID}/projects`, {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({ name: `queue-roundtrip-test-${Date.now()}` }),
+  })
+  if (!projectRes.ok) {
+    console.error(`✗ Project creation returned ${projectRes.status}:`, await projectRes.text())
+    process.exit(1)
+  }
+  const project = (await projectRes.json()) as { id: string }
+  console.log(`✓ project created: id=${project.id}`)
+
+  // ── Step 2: drain any leftover jobs from previous test runs ──
   const beforeLen = await redis.llen(queueKey)
 
-  // ── Step 2: POST intel/run via the API ──
-  console.log('→ POST /agents/intel/run ...')
-  const res = await fetch(`${API_BASE}/workspaces/${WORKSPACE_ID}/agents/intel/run`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${JWT}`,
-    },
-    body: JSON.stringify({
-      competitor_urls: ['https://example.com'],
-      industry_keywords: 'B2B SaaS marketing',
-    }),
-  })
+  // ── Step 3: POST research/run via the API ──
+  console.log('→ POST /agents/research/run ...')
+  const res = await fetch(
+    `${API_BASE}/workspaces/${WORKSPACE_ID}/projects/${project.id}/agents/research/run`,
+    {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        competitor_urls: ['https://example.com'],
+        industry_keywords: 'B2B SaaS marketing',
+      }),
+    }
+  )
 
   if (!res.ok) {
     const body = await res.text()
@@ -71,30 +90,34 @@ async function run() {
     process.exit(1)
   }
 
-  // ── Step 3: verify agent_runs row in Supabase ──
-  const { data: run, error } = await supabase
+  // ── Step 4: verify agent_runs row in Supabase ──
+  const { data: agentRun, error } = await supabase
     .from('agent_runs')
-    .select('id, status, agent_type, workspace_id, job_id')
+    .select('id, status, agent_type, workspace_id, project_id, job_id')
     .eq('id', runId)
     .single()
 
-  if (error || !run) {
+  if (error || !agentRun) {
     console.error('✗ agent_run not found in Supabase:', error?.message)
     process.exit(1)
   }
 
-  console.log('✓ agent_run confirmed in Supabase:', run)
+  console.log('✓ agent_run confirmed in Supabase:', agentRun)
 
-  if (run.status !== 'queued') {
-    console.error(`✗ DB status is '${run.status}', expected 'queued'`)
+  if (agentRun.status !== 'queued') {
+    console.error(`✗ DB status is '${agentRun.status}', expected 'queued'`)
     process.exit(1)
   }
-  if (run.workspace_id !== WORKSPACE_ID) {
-    console.error(`✗ workspace_id mismatch: got ${run.workspace_id}`)
+  if (agentRun.workspace_id !== WORKSPACE_ID) {
+    console.error(`✗ workspace_id mismatch: got ${agentRun.workspace_id}`)
+    process.exit(1)
+  }
+  if (agentRun.project_id !== project.id) {
+    console.error(`✗ project_id mismatch: got ${agentRun.project_id}`)
     process.exit(1)
   }
 
-  // ── Step 4: verify job landed in Redis ──
+  // ── Step 5: verify job landed in Redis ──
   const afterLen = await redis.llen(queueKey)
   if (afterLen <= beforeLen) {
     console.error(`✗ Redis queue length did not increase (before=${beforeLen}, after=${afterLen})`)
@@ -106,7 +129,7 @@ async function run() {
   const raw = await redis.lindex(queueKey, -1)
   if (raw) {
     const job = typeof raw === 'string' ? JSON.parse(raw) : raw
-    if (job.job_type !== 'intel_run') {
+    if (job.job_type !== 'research_run') {
       console.error(`✗ Job type mismatch: got '${job.job_type}'`)
       process.exit(1)
     }
@@ -114,16 +137,22 @@ async function run() {
       console.error(`✗ Job workspace_id mismatch`)
       process.exit(1)
     }
+    if (job.payload?.project_id !== project.id) {
+      console.error(`✗ Job payload.project_id mismatch`)
+      process.exit(1)
+    }
     console.log('✓ Redis job structure valid:', {
       job_id: job.job_id,
       job_type: job.job_type,
       workspace_id: job.workspace_id,
+      project_id: job.payload?.project_id,
     })
   }
 
-  // ── Cleanup: remove the test agent_run ──
+  // ── Cleanup: remove the test agent_run and archive the scratch project ──
   await supabase.from('agent_runs').delete().eq('id', runId)
-  console.log('✓ Cleaned up test agent_run')
+  await supabase.from('projects').update({ status: 'archived' }).eq('id', project.id)
+  console.log('✓ Cleaned up test agent_run and archived scratch project')
 
   console.log('\n✅ All integration checks passed')
 }

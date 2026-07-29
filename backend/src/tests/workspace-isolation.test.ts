@@ -31,9 +31,9 @@ async function runIsolationTest(): Promise<void> {
     auth: { persistSession: false },
   })
 
-  // Attempt to read Workspace B's market_signals as User A
+  // Attempt to read Workspace B's research_signals as User A
   const { data, error } = await clientA
-    .from('market_signals')
+    .from('research_signals')
     .select('*')
     .eq('workspace_id', WORKSPACE_B_ID)
 
@@ -70,6 +70,88 @@ async function runIsolationTest(): Promise<void> {
   } else {
     console.error('✗ ISOLATION FAILURE: User A could read Workspace B playbooks!', pbData)
     process.exit(1)
+  }
+
+  // Same check for projects — the new reusable-knowledge container
+  const { data: projectData } = await clientA
+    .from('projects')
+    .select('*')
+    .eq('workspace_id', WORKSPACE_B_ID)
+
+  if (!projectData || projectData.length === 0) {
+    console.log('✓ RLS blocked cross-workspace projects read')
+  } else {
+    console.error('✗ ISOLATION FAILURE: User A could read Workspace B projects!', projectData)
+    process.exit(1)
+  }
+
+  // Same check for campaigns
+  const { data: campaignData } = await clientA
+    .from('campaigns')
+    .select('*')
+    .eq('workspace_id', WORKSPACE_B_ID)
+
+  if (!campaignData || campaignData.length === 0) {
+    console.log('✓ RLS blocked cross-workspace campaigns read')
+  } else {
+    console.error('✗ ISOLATION FAILURE: User A could read Workspace B campaigns!', campaignData)
+    process.exit(1)
+  }
+
+  // Same check for icp_profiles
+  const { data: icpData } = await clientA
+    .from('icp_profiles')
+    .select('*')
+    .eq('workspace_id', WORKSPACE_B_ID)
+
+  if (!icpData || icpData.length === 0) {
+    console.log('✓ RLS blocked cross-workspace icp_profiles read')
+  } else {
+    console.error('✗ ISOLATION FAILURE: User A could read Workspace B ICP profiles!', icpData)
+    process.exit(1)
+  }
+
+  // Same check for market_sizing_reports
+  const { data: sizingData } = await clientA
+    .from('market_sizing_reports')
+    .select('*')
+    .eq('workspace_id', WORKSPACE_B_ID)
+
+  if (!sizingData || sizingData.length === 0) {
+    console.log('✓ RLS blocked cross-workspace market_sizing_reports read')
+  } else {
+    console.error('✗ ISOLATION FAILURE: User A could read Workspace B market sizing reports!', sizingData)
+    process.exit(1)
+  }
+
+  // workspace_integrations: even the safe columns must not leak cross-workspace,
+  // and the token columns must be unreachable regardless of workspace.
+  const { data: integrationData, error: integrationError } = await clientA
+    .from('workspace_integrations')
+    .select('*')
+    .eq('workspace_id', WORKSPACE_B_ID)
+
+  if (integrationError) {
+    console.log('✓ RLS/column grants blocked cross-workspace workspace_integrations read (returned error):', integrationError.message)
+  } else if (!integrationData || integrationData.length === 0) {
+    console.log('✓ RLS blocked cross-workspace workspace_integrations read')
+  } else {
+    console.error('✗ ISOLATION FAILURE: User A could read Workspace B integrations!', integrationData)
+    process.exit(1)
+  }
+
+  // Column-level check: even for an integration row a user CAN see (their own
+  // workspace's), the token columns must never come back. This is the concrete
+  // test for the REVOKE/GRANT column lockdown described in the Phase 1 migration.
+  const { data: ownIntegrations } = await clientA.from('workspace_integrations_public').select('*')
+  if (ownIntegrations) {
+    for (const row of ownIntegrations) {
+      if ('access_token_encrypted' in row || 'refresh_token_encrypted' in row) {
+        console.error('✗ ISOLATION FAILURE: token columns are reachable via workspace_integrations_public!', row)
+        process.exit(1)
+      }
+    }
+    console.log('✓ workspace_integrations_public never exposes token columns')
   }
 
   console.log('\n✓ All isolation checks passed')
