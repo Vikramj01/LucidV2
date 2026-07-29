@@ -45,9 +45,15 @@ async def dispatch(job: dict) -> None:
         if job_type == "vault_ingest":
             from app.graphs.vault_ingest import run_vault_ingest
             await run_vault_ingest(job)
-        elif job_type == "intel_run":
-            from app.graphs.intel_agent import run_intel_agent
-            await run_intel_agent(job)
+        elif job_type == "research_run":
+            from app.graphs.research_agent import run_research_agent
+            await run_research_agent(job)
+        elif job_type == "icp_run":
+            from app.graphs.icp_agent import run_icp_agent
+            await run_icp_agent(job)
+        elif job_type == "market_sizing_run":
+            from app.graphs.market_sizing_agent import run_market_sizing_agent
+            await run_market_sizing_agent(job)
         elif job_type == "architect_run":
             from app.graphs.architect_agent import run_architect_agent
             await run_architect_agent(job)

@@ -1,9 +1,11 @@
 """
 extract_node: pull raw text out of the source.
 
-- pdf       → download from Supabase Storage, parse with pypdf
-- url       → scrape with Firecrawl
-- free_text → pass straight through
+- pdf          → download from Supabase Storage, parse with pypdf
+- url          → scrape with Firecrawl
+- free_text    → pass straight through
+- google_drive → fetch via Drive API (Docs exported as text, PDFs parsed with pypdf)
+- notion       → fetch via Notion API, recursively flatten blocks to text
 """
 from __future__ import annotations
 
@@ -16,6 +18,8 @@ from firecrawl import FirecrawlApp
 
 from app.lib.settings import settings
 from app.lib.supabase import get_supabase
+from app.lib.integrations.google_drive import extract_google_drive_text
+from app.lib.integrations.notion import extract_notion_text
 
 if TYPE_CHECKING:
     from app.graphs.vault_ingest import VaultState
@@ -36,6 +40,10 @@ def extract_node(state: "VaultState") -> dict:
             raw_text = _extract_url(state["url"])
         elif source_type == "free_text":
             raw_text = (state["text"] or "").strip()
+        elif source_type == "google_drive":
+            raw_text = _extract_google_drive(state["integration_id"], state["external_file_id"])
+        elif source_type == "notion":
+            raw_text = _extract_notion(state["integration_id"], state["external_file_id"])
         else:
             return {"error": f"Unknown source_type: {source_type}"}
 
@@ -80,6 +88,18 @@ def _extract_url(url: str | None) -> str:
     # firecrawl returns a ScrapeResponse object
     markdown = getattr(result, "markdown", None) or ""
     return markdown.strip()
+
+
+def _extract_google_drive(integration_id: str | None, external_file_id: str | None) -> str:
+    if not integration_id or not external_file_id:
+        raise ValueError("integration_id and external_file_id are required for Google Drive extraction")
+    return extract_google_drive_text(integration_id, external_file_id)
+
+
+def _extract_notion(integration_id: str | None, external_file_id: str | None) -> str:
+    if not integration_id or not external_file_id:
+        raise ValueError("integration_id and external_file_id are required for Notion extraction")
+    return extract_notion_text(integration_id, external_file_id)
 
 
 def _mark_failed(document_id: str, error_msg: str) -> None:

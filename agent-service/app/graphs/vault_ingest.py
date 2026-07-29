@@ -27,10 +27,12 @@ class VaultState(TypedDict):
     # Job inputs
     document_id: str
     workspace_id: str
-    source_type: str          # 'pdf' | 'url' | 'free_text'
+    source_type: str          # 'pdf' | 'url' | 'free_text' | 'google_drive' | 'notion'
     file_path: str | None
     url: str | None
     text: str | None
+    integration_id: str | None
+    external_file_id: str | None
 
     # Pipeline data
     raw_text: str             # set by extract_node
@@ -95,6 +97,8 @@ async def run_vault_ingest(job: dict) -> None:
         "file_path": payload.file_path,
         "url": payload.url,
         "text": payload.text,
+        "integration_id": payload.integration_id,
+        "external_file_id": payload.external_file_id,
         "raw_text": "",
         "chunks": [],
         "embeddings": [],

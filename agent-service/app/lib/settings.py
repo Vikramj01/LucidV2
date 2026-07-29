@@ -9,6 +9,12 @@ class Settings(BaseSettings):
     upstash_redis_url: str
     upstash_redis_token: str
     port: int = 8000
+    # Backend-internal endpoint for fetching a live, refreshed OAuth token
+    # for a workspace integration (Google Drive / Notion). Agent-service
+    # never holds OAuth client secrets — backend owns the OAuth handshake
+    # and token refresh; this is a service-to-service call, not user-facing.
+    backend_internal_url: str = ""
+    internal_api_key: str = ""
 
     class Config:
         env_file = ".env"

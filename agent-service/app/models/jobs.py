@@ -16,18 +16,37 @@ class RedisJob(BaseModel):
 
 class VaultIngestPayload(BaseModel):
     document_id: str
-    source_type: str  # 'pdf' | 'url' | 'free_text'
+    source_type: str  # 'pdf' | 'url' | 'free_text' | 'google_drive' | 'notion'
     file_path: str | None = None
     url: str | None = None
     text: str | None = None
+    integration_id: str | None = None
+    external_file_id: str | None = None
 
-class IntelRunPayload(BaseModel):
+class ResearchRunPayload(BaseModel):
     agent_run_id: str
+    project_id: str
     competitor_urls: list[str]
     industry_keywords: str
+    research_questions: list[str] = []
+
+class IcpRunPayload(BaseModel):
+    agent_run_id: str
+    project_id: str
+    research_signal_id: str | None = None
+
+class MarketSizingRunPayload(BaseModel):
+    agent_run_id: str
+    project_id: str
+    research_signal_id: str | None = None
+    market_data_urls: list[str] = []
 
 class ArchitectRunPayload(BaseModel):
     agent_run_id: str
-    market_signal_id: str
+    project_id: str
+    campaign_id: str
+    research_signal_id: str | None = None
+    icp_profile_id: str | None = None
+    market_sizing_report_id: str | None = None
     campaign_goal: str
     channels: list[str]

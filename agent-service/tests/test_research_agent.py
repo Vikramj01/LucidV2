@@ -1,8 +1,8 @@
 """
-Unit tests for the Intel Agent pipeline nodes.
+Unit tests for the Research Agent pipeline nodes.
 
 No network, no Supabase, no Firecrawl, no Anthropic API calls.
-Run with: pytest tests/test_intel_agent.py -v
+Run with: pytest tests/test_research_agent.py -v
 """
 import sys
 import types
@@ -98,9 +98,9 @@ def _load(rel_path: str, module_name: str):
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
     return mod
 
-scrape_mod = _load("app/nodes/intel/scrape_node.py", "scrape_node")
-extract_mod = _load("app/nodes/intel/extract_node.py", "extract_node")
-store_mod = _load("app/nodes/intel/store_node.py", "store_node")
+scrape_mod = _load("app/nodes/research/scrape_node.py", "research_scrape_node")
+extract_mod = _load("app/nodes/research/extract_node.py", "research_extract_node")
+store_mod = _load("app/nodes/research/store_node.py", "research_store_node")
 
 scrape_node = scrape_mod.scrape_node
 extract_node = extract_mod.extract_node
@@ -112,8 +112,10 @@ store_node = store_mod.store_node
 BASE_STATE = {
     "agent_run_id": "run-abc",
     "workspace_id": "ws-123",
+    "project_id": "proj-789",
     "competitor_urls": ["https://acme.com", "https://rival.io"],
     "industry_keywords": "B2B SaaS marketing automation",
+    "research_questions": [],
     "scrape_results": [],
     "signal_data": {},
     "signal_id": "",
@@ -211,6 +213,28 @@ def test_extract_node_strips_markdown_fences():
     assert not result.get("error")
 
 
+def test_extract_node_folds_research_questions_into_prompt():
+    state_with_questions = {
+        **STATE_WITH_SCRAPES,
+        "research_questions": ["What's driving budget consolidation right now?"],
+    }
+    client = _make_anthropic_client(json.dumps(VALID_SIGNAL))
+    with patch.object(extract_mod.anthropic, "Anthropic", return_value=client):
+        extract_node(state_with_questions)
+    call_kwargs = client.messages.create.call_args.kwargs
+    user_content = call_kwargs["messages"][0]["content"]
+    assert "budget consolidation" in user_content
+
+
+def test_extract_node_omits_questions_block_when_none_supplied():
+    client = _make_anthropic_client(json.dumps(VALID_SIGNAL))
+    with patch.object(extract_mod.anthropic, "Anthropic", return_value=client):
+        extract_node(STATE_WITH_SCRAPES)
+    call_kwargs = client.messages.create.call_args.kwargs
+    user_content = call_kwargs["messages"][0]["content"]
+    assert "Additional research questions" not in user_content
+
+
 # ── store_node tests ──────────────────────────────────────────────────────────
 
 STATE_WITH_SIGNAL = {
@@ -238,6 +262,20 @@ def test_store_node_inserts_row_and_marks_complete():
     assert result["signal_id"]
     _mark_complete.assert_called_once_with("run-abc")
     _mark_failed.assert_not_called()
+
+
+def test_store_node_writes_to_research_signals_table_with_project_id():
+    _supabase_mock.reset_mock()
+    insert_result = MagicMock()
+    insert_result.error = None
+    _supabase_mock.table.return_value.insert.return_value.execute.return_value = insert_result
+
+    store_node(STATE_WITH_SIGNAL)
+
+    _supabase_mock.table.assert_called_once_with("research_signals")
+    insert_call = _supabase_mock.table.return_value.insert.call_args
+    row = insert_call[0][0]
+    assert row["project_id"] == "proj-789"
 
 
 def test_store_node_marks_failed_on_db_error():

@@ -1,8 +1,8 @@
 """
 extract_node: send scraped competitor content to Claude Sonnet and extract
-a structured MarketSignal JSON.
+a structured Research Signal JSON.
 
-Output shape matches the market_signals table:
+Output shape matches the research_signals table:
   competitor_profiles: list[CompetitorProfile]
   market_gaps:         list[str]
   intent_triggers:     list[str]
@@ -19,7 +19,7 @@ import anthropic
 from app.lib.settings import settings
 
 if TYPE_CHECKING:
-    from app.graphs.intel_agent import IntelState
+    from app.graphs.research_agent import ResearchState
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,8 @@ MAX_TOKENS = 4096
 
 SYSTEM_PROMPT = """\
 You are a B2B market intelligence analyst. You will be given scraped content from \
-competitor websites. Analyse the content and return ONLY a valid JSON object — no \
+competitor websites, and optionally some open-ended research questions the client \
+wants answered. Analyse the content and return ONLY a valid JSON object — no \
 markdown fences, no explanation.
 
 The JSON must match this exact schema:
@@ -53,14 +54,18 @@ Rules:
 - market_gaps: 3–6 unmet needs or underserved segments visible from the competitive landscape
 - intent_triggers: 3–6 buying signals or pain points that indicate purchase intent
 - recommended_angles: 3–5 differentiated positioning angles the client could own
+- If research questions are provided, fold your answers to them into market_gaps,
+  intent_triggers, and recommended_angles rather than adding new top-level fields —
+  the schema does not change based on what's asked
 - All strings must be concise (under 150 characters)
 - Return only JSON, nothing else
 """
 
 
-def extract_node(state: "IntelState") -> dict:
+def extract_node(state: "ResearchState") -> dict:
     scrape_results: list[dict] = state["scrape_results"]
     industry_keywords: str = state["industry_keywords"]
+    research_questions: list[str] = state.get("research_questions") or []
     agent_run_id = state["agent_run_id"]
 
     try:
@@ -68,6 +73,9 @@ def extract_node(state: "IntelState") -> dict:
         sections: list[str] = [
             f"Industry keywords: {industry_keywords}\n",
         ]
+        if research_questions:
+            questions_block = "\n".join(f"- {q}" for q in research_questions)
+            sections.append(f"Additional research questions to address:\n{questions_block}\n")
         for r in scrape_results:
             title = r.get("title") or r["url"]
             content = (r.get("markdown") or "").strip()

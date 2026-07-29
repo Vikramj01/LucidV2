@@ -20,8 +20,11 @@ logger = logging.getLogger(__name__)
 def store_node(state: "ArchitectState") -> dict:
     playbook_data: dict = state["playbook_data"]
     workspace_id: str = state["workspace_id"]
+    campaign_id: str = state["campaign_id"]
     agent_run_id: str = state["agent_run_id"]
-    market_signal_id: str = state["market_signal_id"]
+    research_signal_id: str = state["research_signal_id"]
+    icp_profile_id: str | None = state.get("icp_profile_id")
+    market_sizing_report_id: str | None = state.get("market_sizing_report_id")
     campaign_goal: str = state["campaign_goal"]
     channels: list[str] = state["channels"]
 
@@ -32,8 +35,11 @@ def store_node(state: "ArchitectState") -> dict:
         row = {
             "id": playbook_id,
             "workspace_id": workspace_id,
+            "campaign_id": campaign_id,
             "agent_run_id": agent_run_id,
-            "market_signal_id": market_signal_id or None,
+            "research_signal_id": research_signal_id or None,
+            "icp_profile_id": icp_profile_id or None,
+            "market_sizing_report_id": market_sizing_report_id or None,
             "campaign_goal": campaign_goal,
             "channels": channels,
             "winning_angle": playbook_data["winning_angle"],

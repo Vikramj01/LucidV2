@@ -1,6 +1,7 @@
 """
-generate_node: send market signal + vault context to Claude Sonnet and produce
-a structured Campaign Playbook JSON.
+generate_node: send project intelligence (research signal + optional ICP +
+optional market sizing) + vault context to Claude Sonnet and produce a
+structured Campaign Playbook JSON.
 
 Output shape matches the campaign_playbooks table:
   winning_angle:   str
@@ -12,6 +13,11 @@ Output shape matches the campaign_playbooks table:
     differentiation: str,
     risk_flags: []
   }
+
+ICP and market sizing are optional inputs — a Project may not have run
+those agents yet. When absent, the prompt tells Claude explicitly so it
+can flag the gap in risk_flags rather than fabricating personas or
+market-size numbers it wasn't given.
 """
 from __future__ import annotations
 
@@ -36,9 +42,11 @@ You are Vimi, an expert B2B marketing strategist at ViMi Digital. You create \
 precise, actionable campaign playbooks for B2B brands.
 
 You will be given:
-1. A market signal analysis (competitor intelligence, market gaps, recommended angles)
-2. Brand voice context from the client's Brand Voice Vault
-3. Campaign parameters (goal, channels)
+1. A research signal (competitor intelligence, market gaps, recommended angles)
+2. An ICP profile (firmographics, buyer personas), if one has been generated for this project
+3. A market sizing report (TAM/SAM/SOM), if one has been generated for this project
+4. Brand voice context from the client's Brand Voice Vault
+5. Campaign parameters (goal, channels)
 
 Return ONLY a valid JSON object — no markdown fences, no explanation — matching this schema:
 
@@ -66,7 +74,13 @@ Return ONLY a valid JSON object — no markdown fences, no explanation — match
 }
 
 Rules:
-- winning_angle must come from the recommended_angles in the market signal
+- winning_angle must come from the recommended_angles in the research signal
+- target_persona should draw on the ICP profile's personas when one is provided;
+  if no ICP profile was provided, derive a reasonable persona from the research
+  signal and brand voice context, and add a risk_flag noting no ICP has been
+  generated for this project yet
+- if no market sizing report was provided, do not invent TAM/SAM/SOM figures;
+  add a risk_flag noting market sizing hasn't been run for this project yet
 - channel_plans must include one entry per channel provided in campaign parameters
 - proof_points: 3-5 items grounded in the brand voice vault context
 - kpis: 2-3 measurable metrics per channel
@@ -77,7 +91,9 @@ Rules:
 
 
 def generate_node(state: "ArchitectState") -> dict:
-    market_signal: dict = state["market_signal"]
+    research_signal: dict = state["research_signal"]
+    icp_profile: dict | None = state.get("icp_profile")
+    market_sizing_report: dict | None = state.get("market_sizing_report")
     vault_chunks: list[dict] = state["vault_chunks"]
     campaign_goal: str = state["campaign_goal"]
     channels: list[str] = state["channels"]
@@ -90,12 +106,21 @@ def generate_node(state: "ArchitectState") -> dict:
             for i, c in enumerate(vault_chunks)
         ) or "No brand voice vault content available."
 
+        icp_block = json.dumps(icp_profile, indent=2) if icp_profile else "Not available — no ICP profile has been generated for this project yet."
+        market_sizing_block = json.dumps(market_sizing_report, indent=2) if market_sizing_report else "Not available — no market sizing report has been generated for this project yet."
+
         user_content = f"""## Campaign Parameters
 Goal: {campaign_goal}
 Channels: {', '.join(channels)}
 
-## Market Signal
-{json.dumps(market_signal, indent=2)}
+## Research Signal
+{json.dumps(research_signal, indent=2)}
+
+## ICP Profile
+{icp_block}
+
+## Market Sizing Report
+{market_sizing_block}
 
 ## Brand Voice Vault Context
 {vault_context}

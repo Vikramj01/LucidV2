@@ -1,8 +1,10 @@
 """
-retrieve_node: fetch Brand Voice Vault context for the Architect Agent.
+retrieve_vault_node: fetch Brand Voice Vault context for the Architect Agent.
 
-Embeds a retrieval query built from the market signal + campaign goal,
-then calls the retrieve_vault_context RPC to get the top-K chunks.
+Embeds a retrieval query built from the combined project intelligence
+(research signal + optional ICP + optional market sizing) and the
+campaign's goal/channels, then calls the retrieve_vault_context RPC to
+get the top-K chunks.
 """
 from __future__ import annotations
 
@@ -23,22 +25,29 @@ EMBED_MODEL = "text-embedding-3-small"
 TOP_K = 8
 
 
-def retrieve_node(state: "ArchitectState") -> dict:
+def retrieve_vault_node(state: "ArchitectState") -> dict:
     workspace_id: str = state["workspace_id"]
-    market_signal: dict = state["market_signal"]
+    research_signal: dict = state["research_signal"]
+    icp_profile: dict | None = state.get("icp_profile")
     campaign_goal: str = state["campaign_goal"]
     channels: list[str] = state["channels"]
     agent_run_id: str = state["agent_run_id"]
 
     try:
-        # Build a compact retrieval query from the signal context
-        gaps = " ".join(market_signal.get("market_gaps", [])[:3])
-        angles = " ".join(market_signal.get("recommended_angles", [])[:3])
+        # Build a compact retrieval query from the combined project intel
+        gaps = " ".join(research_signal.get("market_gaps", [])[:3])
+        angles = " ".join(research_signal.get("recommended_angles", [])[:3])
+        personas = ""
+        if icp_profile:
+            persona_titles = [p.get("title", "") for p in icp_profile.get("personas", [])[:3]]
+            personas = f"Target personas: {', '.join(t for t in persona_titles if t)}. "
+
         query = (
             f"Campaign goal: {campaign_goal}. "
             f"Channels: {', '.join(channels)}. "
             f"Market gaps: {gaps}. "
-            f"Angles: {angles}."
+            f"Angles: {angles}. "
+            f"{personas}"
         )
 
         client = OpenAI(api_key=settings.openai_api_key)
@@ -58,12 +67,12 @@ def retrieve_node(state: "ArchitectState") -> dict:
         vault_chunks: list[dict] = result.data or []
 
         logger.info(
-            "retrieve_node: agent_run_id=%s vault_chunks=%d",
+            "retrieve_vault_node: agent_run_id=%s vault_chunks=%d",
             agent_run_id, len(vault_chunks),
         )
         return {"vault_chunks": vault_chunks}
 
     except Exception as exc:
-        error_msg = f"retrieve_node failed: {exc}"
+        error_msg = f"retrieve_vault_node failed: {exc}"
         logger.exception(error_msg)
         return {"error": error_msg}

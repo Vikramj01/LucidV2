@@ -147,12 +147,15 @@ export interface AgentRun {
 
 // ---- Research Agent ----
 
+// Shape matches agent-service/app/nodes/research/extract_node.py, the
+// actual shipped output — not a guessed shape.
 export interface CompetitorProfile {
+  name: string
   url: string
-  key_messaging: string[]
-  target_audience: string
-  content_themes: string[]
-  primary_cta: string
+  positioning: string
+  key_messages: string[]
+  icp: string
+  weaknesses: string[]
 }
 
 export interface ResearchSignal {

@@ -1,9 +1,9 @@
 """
-store_node: persist the extracted MarketSignal to the market_signals table
-and mark the agent_run as complete.
+store_node: persist the extracted Research Signal to the research_signals
+table and mark the agent_run as complete.
 
 Writes:
-  market_signals row with all extracted fields
+  research_signals row with all extracted fields, scoped to project_id
   agent_runs.status → 'complete', output_summary = signal id
 """
 from __future__ import annotations
@@ -16,14 +16,15 @@ from app.lib.supabase import get_supabase
 from app.lib.agent_run import mark_complete, mark_failed
 
 if TYPE_CHECKING:
-    from app.graphs.intel_agent import IntelState
+    from app.graphs.research_agent import ResearchState
 
 logger = logging.getLogger(__name__)
 
 
-def store_node(state: "IntelState") -> dict:
+def store_node(state: "ResearchState") -> dict:
     signal_data: dict = state["signal_data"]
     workspace_id: str = state["workspace_id"]
+    project_id: str = state["project_id"]
     agent_run_id: str = state["agent_run_id"]
     scrape_results: list[dict] = state["scrape_results"]
 
@@ -36,6 +37,7 @@ def store_node(state: "IntelState") -> dict:
         row = {
             "id": signal_id,
             "workspace_id": workspace_id,
+            "project_id": project_id,
             "agent_run_id": agent_run_id,
             "competitors_analysed": sources,
             "competitor_profiles": signal_data["competitor_profiles"],
@@ -45,7 +47,7 @@ def store_node(state: "IntelState") -> dict:
             "sources": sources,
         }
 
-        result = db.table("market_signals").insert(row).execute()
+        result = db.table("research_signals").insert(row).execute()
         if hasattr(result, "error") and result.error:
             raise RuntimeError(f"Insert error: {result.error}")
 
