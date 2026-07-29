@@ -10,13 +10,17 @@ export type UserRole = 'org_admin' | 'workspace_member' | 'super_admin'
 export type UserStatus = 'active' | 'suspended' | 'invited'
 export type AgentMode = 'approval_gated' | 'autonomous'
 export type AgentRunStatus = 'queued' | 'running' | 'complete' | 'failed'
-export type AgentType = 'intel' | 'architect' | 'builder' | 'analyst' | 'vault_ingest'
+export type AgentType = 'research' | 'architect' | 'icp' | 'market_sizing' | 'builder' | 'analyst' | 'vault_ingest'
 export type VaultDocStatus = 'queued' | 'processing' | 'ready' | 'failed'
-export type VaultSourceType = 'pdf' | 'url' | 'free_text'
+export type VaultSourceType = 'pdf' | 'url' | 'free_text' | 'google_drive' | 'notion'
 export type CampaignGoal = 'awareness' | 'leads' | 'pipeline' | 'retention'
 export type CampaignChannel = 'linkedin' | 'google_search' | 'google_display' | 'meta' | 'email'
 export type PlaybookStatus = 'draft' | 'approved' | 'archived'
-export type CreditActionType = 'intel_run' | 'architect_run' | 'vault_ingest'
+export type CreditActionType = 'research_run' | 'architect_run' | 'icp_run' | 'market_sizing_run' | 'vault_ingest'
+export type ProjectStatus = 'active' | 'archived'
+export type CampaignStatus = 'active' | 'completed' | 'archived'
+export type IntegrationProvider = 'google_drive' | 'notion'
+export type IntegrationStatus = 'connected' | 'disconnected' | 'error'
 
 // ---- Core entities ----
 
@@ -62,6 +66,32 @@ export interface WorkspaceMember {
   created_at: string
 }
 
+// ---- Projects & Campaigns ----
+
+export interface Project {
+  id: string
+  workspace_id: string
+  name: string
+  description: string | null
+  status: ProjectStatus
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface Campaign {
+  id: string
+  workspace_id: string
+  project_id: string
+  name: string
+  campaign_goal: CampaignGoal
+  channels: CampaignChannel[]
+  status: CampaignStatus
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
 // ---- Brand Voice Vault ----
 
 export interface VaultDocument {
@@ -71,6 +101,9 @@ export interface VaultDocument {
   source_type: VaultSourceType
   file_path: string | null
   file_size_bytes: number | null
+  integration_id: string | null
+  external_file_id: string | null
+  external_file_url: string | null
   status: VaultDocStatus
   error_message: string | null
   chunk_count: number | null
@@ -79,11 +112,27 @@ export interface VaultDocument {
   updated_at: string
 }
 
+// Safe, RLS-exposed view of a workspace integration — never include the
+// token fields here, they must never round-trip into a shared type that
+// both frontend and backend import.
+export interface WorkspaceIntegrationPublic {
+  id: string
+  workspace_id: string
+  provider: IntegrationProvider
+  status: IntegrationStatus
+  external_account_label: string | null
+  connected_at: string
+  last_synced_at: string | null
+  error_message: string | null
+}
+
 // ---- Agent Runs ----
 
 export interface AgentRun {
   id: string
   workspace_id: string
+  project_id: string | null
+  campaign_id: string | null
   agent_type: AgentType
   status: AgentRunStatus
   job_id: string | null
@@ -96,7 +145,7 @@ export interface AgentRun {
   created_at: string
 }
 
-// ---- Intel Agent ----
+// ---- Research Agent ----
 
 export interface CompetitorProfile {
   url: string
@@ -106,9 +155,10 @@ export interface CompetitorProfile {
   primary_cta: string
 }
 
-export interface MarketSignal {
+export interface ResearchSignal {
   id: string
   workspace_id: string
+  project_id: string
   agent_run_id: string
   competitors_analysed: string[]
   competitor_profiles: CompetitorProfile[]
@@ -119,50 +169,96 @@ export interface MarketSignal {
   created_at: string
 }
 
-// ---- Architect Agent ----
+// ---- ICP Agent ----
 
-export interface AdCopyVariant {
-  format: string
-  headline: string
-  body: string
+export interface IcpFirmographics {
+  company_size: string
+  industry: string[]
+  revenue_range: string
+  geography: string[]
+}
+
+export interface IcpPersona {
+  title: string
+  department: string
+  seniority: string
+  pain_points: string[]
+  buying_triggers: string[]
+  decision_role: string
+}
+
+export interface IcpProfile {
+  id: string
+  workspace_id: string
+  project_id: string
+  agent_run_id: string
+  research_signal_id: string | null
+  firmographics: IcpFirmographics
+  personas: IcpPersona[]
+  pain_points: string[]
+  buying_triggers: string[]
+  sources: string[]
+  created_at: string
+}
+
+// ---- Market Sizing Agent ----
+
+export interface MarketSizeEstimate {
+  value: string
+  currency: string
+  methodology: string
+  assumptions: string[]
+}
+
+export interface MarketSizingReport {
+  id: string
+  workspace_id: string
+  project_id: string
+  agent_run_id: string
+  research_signal_id: string | null
+  tam_estimate: MarketSizeEstimate
+  sam_estimate: MarketSizeEstimate
+  som_estimate: MarketSizeEstimate
+  methodology_notes: string
+  sources: string[]
+  created_at: string
+}
+
+// ---- Architect Agent ----
+// Shape matches agent-service/app/nodes/architect/generate_node.py, the
+// actual shipped output — not the ad_copy_variants/campaign_phases shape
+// this used to document, which was never what the agent produced.
+
+export interface MessagingFramework {
+  primary_message: string
+  proof_points: string[]
   cta: string
 }
 
-export interface CampaignPhase {
-  phase: string
-  budget_pct: number
-  duration_days: number
-}
-
-export interface MessagingFramework {
-  hero_message: string
-  supporting_points: string[]
-  proof_points: string[]
-}
-
-export interface SuccessMetric {
-  kpi: string
-  target: string
-}
-
-export interface ChannelPlaybook {
-  strategy_rationale: string
-  campaign_phases: CampaignPhase[]
-  messaging_framework: MessagingFramework
-  ad_copy_variants: AdCopyVariant[]
-  success_metrics: SuccessMetric[]
+export interface ChannelPlan {
+  channel: string
+  objective: string
+  content_themes: string[]
+  kpis: string[]
 }
 
 export interface PlaybookContent {
-  channels: Partial<Record<CampaignChannel, ChannelPlaybook>>
-  sources: string[]
+  executive_summary: string
+  messaging_framework: MessagingFramework
+  channel_plans: ChannelPlan[]
+  differentiation: string
+  risk_flags: string[]
 }
 
 export interface CampaignPlaybook {
   id: string
   workspace_id: string
+  project_id: string
+  campaign_id: string
   agent_run_id: string
-  market_signal_id: string | null
+  research_signal_id: string | null
+  icp_profile_id: string | null
+  market_sizing_report_id: string | null
   campaign_goal: CampaignGoal
   channels: CampaignChannel[]
   winning_angle: string
@@ -193,7 +289,7 @@ export interface CreditLedgerEntry {
 
 export interface RedisJob {
   job_id: string
-  job_type: 'intel_run' | 'architect_run' | 'vault_ingest'
+  job_type: 'research_run' | 'icp_run' | 'market_sizing_run' | 'architect_run' | 'vault_ingest'
   workspace_id: string
   org_id: string
   payload: Record<string, unknown>
