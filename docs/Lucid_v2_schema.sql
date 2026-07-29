@@ -689,7 +689,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = public, pg_temp;
 
 CREATE TRIGGER campaigns_check_workspace
   BEFORE INSERT OR UPDATE ON campaigns
@@ -724,7 +724,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = public, pg_temp;
 
 CREATE TRIGGER campaign_playbooks_set_project_id
   BEFORE INSERT OR UPDATE OF campaign_id ON campaign_playbooks
