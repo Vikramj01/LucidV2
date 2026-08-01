@@ -55,7 +55,54 @@ export class ApiError extends Error {
   }
 }
 
-// ---- Organisations ----
+// ---- Shared response shapes ----
+
+export interface Project {
+  id: string
+  workspace_id: string
+  name: string
+  description: string | null
+  status: 'active' | 'archived'
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface Campaign {
+  id: string
+  workspace_id: string
+  project_id: string
+  name: string
+  campaign_goal: string
+  channels: string[]
+  status: 'active' | 'completed' | 'archived'
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface IntegrationPublic {
+  id: string
+  workspace_id: string
+  provider: 'google_drive' | 'notion'
+  status: 'connected' | 'disconnected' | 'error'
+  external_account_label: string | null
+  connected_at: string
+  last_synced_at: string | null
+  error_message: string | null
+}
+
+export interface AgentRunRow {
+  id: string
+  workspace_id: string
+  project_id: string | null
+  campaign_id: string | null
+  agent_type: string
+  status: 'queued' | 'running' | 'complete' | 'failed'
+  job_id: string | null
+  error_message: string | null
+  created_at: string
+}
 
 export const api = {
   organisations: {
@@ -88,6 +135,56 @@ export const api = {
       request<{ ledger: unknown[] }>(`/workspaces/${id}/credits`),
   },
 
+  projects: {
+    list: (workspaceId: string, includeArchived = false) =>
+      request<Project[]>(
+        `/workspaces/${workspaceId}/projects${includeArchived ? '?include_archived=true' : ''}`
+      ),
+
+    create: (workspaceId: string, body: { name: string; description?: string }) =>
+      request<Project>(`/workspaces/${workspaceId}/projects`, { method: 'POST', body }),
+
+    get: (workspaceId: string, projectId: string) =>
+      request<Project>(`/workspaces/${workspaceId}/projects/${projectId}`),
+
+    update: (workspaceId: string, projectId: string, body: Record<string, unknown>) =>
+      request<Project>(`/workspaces/${workspaceId}/projects/${projectId}`, {
+        method: 'PATCH',
+        body,
+      }),
+
+    archive: (workspaceId: string, projectId: string) =>
+      request<void>(`/workspaces/${workspaceId}/projects/${projectId}`, { method: 'DELETE' }),
+  },
+
+  campaigns: {
+    list: (workspaceId: string, projectId: string, includeArchived = false) =>
+      request<Campaign[]>(
+        `/workspaces/${workspaceId}/projects/${projectId}/campaigns${includeArchived ? '?include_archived=true' : ''}`
+      ),
+
+    create: (
+      workspaceId: string,
+      projectId: string,
+      body: { name: string; campaign_goal: string; channels: string[] }
+    ) =>
+      request<Campaign>(`/workspaces/${workspaceId}/projects/${projectId}/campaigns`, {
+        method: 'POST',
+        body,
+      }),
+
+    get: (workspaceId: string, projectId: string, campaignId: string) =>
+      request<Campaign>(
+        `/workspaces/${workspaceId}/projects/${projectId}/campaigns/${campaignId}`
+      ),
+
+    archive: (workspaceId: string, projectId: string, campaignId: string) =>
+      request<void>(
+        `/workspaces/${workspaceId}/projects/${projectId}/campaigns/${campaignId}`,
+        { method: 'DELETE' }
+      ),
+  },
+
   vault: {
     list: (workspaceId: string) =>
       request<unknown[]>(`/workspaces/${workspaceId}/vault`),
@@ -107,6 +204,18 @@ export const api = {
     addText: (workspaceId: string, body: { name: string; text: string }) =>
       request<{ id: string; status: string; job_id: string }>(
         `/workspaces/${workspaceId}/vault/text`,
+        { method: 'POST', body }
+      ),
+
+    addDriveFile: (workspaceId: string, body: { file_id: string; name: string }) =>
+      request<{ id: string; status: string; job_id: string }>(
+        `/workspaces/${workspaceId}/vault/drive`,
+        { method: 'POST', body }
+      ),
+
+    addNotionPage: (workspaceId: string, body: { page_id_or_url: string; name: string }) =>
+      request<{ id: string; status: string; job_id: string }>(
+        `/workspaces/${workspaceId}/vault/notion`,
         { method: 'POST', body }
       ),
 
@@ -144,52 +253,124 @@ export const api = {
     },
   },
 
+  integrations: {
+    list: (workspaceId: string) =>
+      request<IntegrationPublic[]>(`/workspaces/${workspaceId}/integrations`),
+
+    disconnect: (workspaceId: string, provider: 'google_drive' | 'notion') =>
+      request<void>(`/workspaces/${workspaceId}/integrations/${provider}`, { method: 'DELETE' }),
+
+    /**
+     * Fetches the provider consent URL (a fetch call, so it can carry the
+     * Bearer token) — the CALLER is responsible for navigating the browser
+     * to it (e.g. `window.location.href = url`), since that's the actual
+     * OAuth redirect step and can't happen inside a fetch().
+     */
+    getConnectUrl: (workspaceId: string, provider: 'google_drive' | 'notion') =>
+      request<{ url: string }>(`/integrations/${provider}/connect?workspace_id=${workspaceId}`),
+  },
+
   agents: {
-    runIntel: (
+    runResearch: (
       workspaceId: string,
-      body: { competitor_urls: string[]; industry_keywords?: string }
+      projectId: string,
+      body: { competitor_urls: string[]; industry_keywords?: string; research_questions?: string[] }
     ) =>
       request<{ id: string; status: string; job_id: string }>(
-        `/workspaces/${workspaceId}/agents/intel/run`,
+        `/workspaces/${workspaceId}/projects/${projectId}/agents/research/run`,
+        { method: 'POST', body }
+      ),
+
+    runIcp: (
+      workspaceId: string,
+      projectId: string,
+      body: { research_signal_id?: string }
+    ) =>
+      request<{ id: string; status: string; job_id: string }>(
+        `/workspaces/${workspaceId}/projects/${projectId}/agents/icp/run`,
+        { method: 'POST', body }
+      ),
+
+    runMarketSizing: (
+      workspaceId: string,
+      projectId: string,
+      body: { research_signal_id?: string; market_data_urls?: string[] }
+    ) =>
+      request<{ id: string; status: string; job_id: string }>(
+        `/workspaces/${workspaceId}/projects/${projectId}/agents/market-sizing/run`,
         { method: 'POST', body }
       ),
 
     runArchitect: (
       workspaceId: string,
-      body: { market_signal_id?: string; campaign_goal: string; channels: string[] }
+      projectId: string,
+      campaignId: string,
+      body: { research_signal_id?: string; icp_profile_id?: string; market_sizing_report_id?: string }
     ) =>
       request<{ id: string; status: string; job_id: string }>(
-        `/workspaces/${workspaceId}/agents/architect/run`,
+        `/workspaces/${workspaceId}/projects/${projectId}/campaigns/${campaignId}/agents/architect/run`,
         { method: 'POST', body }
       ),
 
-    listRuns: (workspaceId: string) =>
-      request<unknown[]>(`/workspaces/${workspaceId}/agents/runs`),
+    listWorkspaceRuns: (workspaceId: string) =>
+      request<AgentRunRow[]>(`/workspaces/${workspaceId}/agents/runs`),
 
-    getRun: (workspaceId: string, runId: string) =>
-      request<unknown>(`/workspaces/${workspaceId}/agents/runs/${runId}`),
+    listProjectRuns: (workspaceId: string, projectId: string) =>
+      request<AgentRunRow[]>(`/workspaces/${workspaceId}/projects/${projectId}/agents/runs`),
+
+    listCampaignRuns: (workspaceId: string, projectId: string, campaignId: string) =>
+      request<AgentRunRow[]>(
+        `/workspaces/${workspaceId}/projects/${projectId}/campaigns/${campaignId}/agents/runs`
+      ),
   },
 
   outputs: {
-    listSignals: (workspaceId: string) =>
-      request<unknown[]>(`/workspaces/${workspaceId}/market-signals`),
+    listResearchSignals: (workspaceId: string, projectId: string) =>
+      request<unknown[]>(`/workspaces/${workspaceId}/projects/${projectId}/research-signals`),
 
-    getSignal: (workspaceId: string, sigId: string) =>
-      request<unknown>(`/workspaces/${workspaceId}/market-signals/${sigId}`),
+    getResearchSignal: (workspaceId: string, projectId: string, sigId: string) =>
+      request<unknown>(`/workspaces/${workspaceId}/projects/${projectId}/research-signals/${sigId}`),
 
-    listPlaybooks: (workspaceId: string) =>
-      request<unknown[]>(`/workspaces/${workspaceId}/playbooks`),
+    listIcpProfiles: (workspaceId: string, projectId: string) =>
+      request<unknown[]>(`/workspaces/${workspaceId}/projects/${projectId}/icp-profiles`),
 
-    getPlaybook: (workspaceId: string, pbId: string) =>
-      request<unknown>(`/workspaces/${workspaceId}/playbooks/${pbId}`),
+    getIcpProfile: (workspaceId: string, projectId: string, icpId: string) =>
+      request<unknown>(`/workspaces/${workspaceId}/projects/${projectId}/icp-profiles/${icpId}`),
 
-    approvePlaybook: (workspaceId: string, pbId: string) =>
-      request<unknown>(`/workspaces/${workspaceId}/playbooks/${pbId}/approve`, {
-        method: 'PATCH',
-      }),
+    listMarketSizingReports: (workspaceId: string, projectId: string) =>
+      request<unknown[]>(`/workspaces/${workspaceId}/projects/${projectId}/market-sizing-reports`),
 
-    exportPlaybook: (workspaceId: string, pbId: string, format: 'markdown' | 'json' = 'json') =>
-      request<unknown>(`/workspaces/${workspaceId}/playbooks/${pbId}/export?format=${format}`),
+    getMarketSizingReport: (workspaceId: string, projectId: string, reportId: string) =>
+      request<unknown>(
+        `/workspaces/${workspaceId}/projects/${projectId}/market-sizing-reports/${reportId}`
+      ),
+
+    listPlaybooks: (workspaceId: string, projectId: string, campaignId: string) =>
+      request<unknown[]>(
+        `/workspaces/${workspaceId}/projects/${projectId}/campaigns/${campaignId}/playbooks`
+      ),
+
+    getPlaybook: (workspaceId: string, projectId: string, campaignId: string, pbId: string) =>
+      request<unknown>(
+        `/workspaces/${workspaceId}/projects/${projectId}/campaigns/${campaignId}/playbooks/${pbId}`
+      ),
+
+    approvePlaybook: (workspaceId: string, projectId: string, campaignId: string, pbId: string) =>
+      request<unknown>(
+        `/workspaces/${workspaceId}/projects/${projectId}/campaigns/${campaignId}/playbooks/${pbId}/approve`,
+        { method: 'PATCH' }
+      ),
+
+    exportPlaybook: (
+      workspaceId: string,
+      projectId: string,
+      campaignId: string,
+      pbId: string,
+      format: 'markdown' | 'json' = 'json'
+    ) =>
+      request<unknown>(
+        `/workspaces/${workspaceId}/projects/${projectId}/campaigns/${campaignId}/playbooks/${pbId}/export?format=${format}`
+      ),
   },
 
   admin: {

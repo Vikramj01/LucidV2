@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import { useAgentStore } from '@/store/agent'
 
+// Shape matches agent-service/app/nodes/research/extract_node.py's actual
+// output — see shared/types/index.ts CompetitorProfile.
+
 interface CompetitorProfile {
   name: string
   url: string
@@ -13,7 +16,7 @@ interface CompetitorProfile {
   weaknesses: string[]
 }
 
-interface MarketSignal {
+interface ResearchSignal {
   id: string
   created_at: string
   competitors_analysed: string[]
@@ -23,7 +26,7 @@ interface MarketSignal {
   recommended_angles: string[]
 }
 
-function SignalCard({ signal }: { signal: MarketSignal }) {
+function SignalCard({ signal }: { signal: ResearchSignal }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -34,7 +37,7 @@ function SignalCard({ signal }: { signal: MarketSignal }) {
       >
         <div>
           <p className="text-sm font-medium text-[#E6EDF3]">
-            Market Signal
+            Research Signal
           </p>
           <p className="text-xs text-[#8B949E] mt-0.5">
             {signal.competitors_analysed.length} competitors ·{' '}
@@ -114,27 +117,33 @@ function Section({
   )
 }
 
-export function IntelTab({ workspaceId }: { workspaceId: string }) {
-  const [signals, setSignals] = useState<MarketSignal[]>([])
+export function ResearchTab({ workspaceId, projectId }: { workspaceId: string; projectId: string | null }) {
+  const [signals, setSignals] = useState<ResearchSignal[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const intelStatus = useAgentStore((s) => s.intelStatus)
+  const researchStatus = useAgentStore((s) => s.researchStatus)
 
   useEffect(() => {
+    if (!projectId) {
+      setSignals([])
+      setLoading(false)
+      return
+    }
     setLoading(true)
-    api.outputs.listSignals(workspaceId)
-      .then((data) => setSignals(data as MarketSignal[]))
+    api.outputs.listResearchSignals(workspaceId, projectId)
+      .then((data) => setSignals(data as ResearchSignal[]))
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [workspaceId, intelStatus]) // refetch when intel agent completes
+  }, [workspaceId, projectId, researchStatus]) // refetch when research agent completes
 
-  if (loading) return <EmptyState message="Loading market signals..." />
+  if (!projectId) return <EmptyState message="Select or create a project to see research signals." />
+  if (loading) return <EmptyState message="Loading research signals..." />
   if (error) return <EmptyState message={`Error: ${error}`} />
   if (signals.length === 0) {
     return (
       <EmptyState
-        message="No market signals yet."
-        hint="Ask Vimi to run the Intel Agent to analyse your competitors."
+        message="No research signals yet."
+        hint="Ask Vimi to run the Research Agent to analyse your competitors."
       />
     )
   }
@@ -142,7 +151,7 @@ export function IntelTab({ workspaceId }: { workspaceId: string }) {
   return (
     <div className="p-6 space-y-3">
       <h2 className="text-xs font-semibold text-[#8B949E] uppercase tracking-wider">
-        Market Signals ({signals.length})
+        Research Signals ({signals.length})
       </h2>
       {signals.map((s) => (
         <SignalCard key={s.id} signal={s} />

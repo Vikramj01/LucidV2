@@ -40,11 +40,15 @@ interface Playbook {
 function ApprovalGate({
   playbookId,
   workspaceId,
+  projectId,
+  campaignId,
   status,
   onApproved,
 }: {
   playbookId: string
   workspaceId: string
+  projectId: string
+  campaignId: string
   status: string
   onApproved: () => void
 }) {
@@ -63,7 +67,7 @@ function ApprovalGate({
     setApproving(true)
     setError(null)
     try {
-      await api.outputs.approvePlaybook(workspaceId, playbookId)
+      await api.outputs.approvePlaybook(workspaceId, projectId, campaignId, playbookId)
       onApproved()
     } catch (e) {
       setError(String(e))
@@ -89,10 +93,14 @@ function ApprovalGate({
 function PlaybookCard({
   playbook,
   workspaceId,
+  projectId,
+  campaignId,
   onApproved,
 }: {
   playbook: Playbook
   workspaceId: string
+  projectId: string
+  campaignId: string
   onApproved: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -116,6 +124,8 @@ function PlaybookCard({
         <ApprovalGate
           playbookId={playbook.id}
           workspaceId={workspaceId}
+          projectId={projectId}
+          campaignId={campaignId}
           status={playbook.status}
           onApproved={() => onApproved(playbook.id)}
         />
@@ -194,19 +204,32 @@ function Label({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function ArchitectTab({ workspaceId }: { workspaceId: string }) {
+export function ArchitectTab({
+  workspaceId,
+  projectId,
+  campaignId,
+}: {
+  workspaceId: string
+  projectId: string | null
+  campaignId: string | null
+}) {
   const [playbooks, setPlaybooks] = useState<Playbook[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const architectStatus = useAgentStore((s) => s.architectStatus)
 
   useEffect(() => {
+    if (!projectId || !campaignId) {
+      setPlaybooks([])
+      setLoading(false)
+      return
+    }
     setLoading(true)
-    api.outputs.listPlaybooks(workspaceId)
+    api.outputs.listPlaybooks(workspaceId, projectId, campaignId)
       .then((data) => setPlaybooks(data as Playbook[]))
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [workspaceId, architectStatus])
+  }, [workspaceId, projectId, campaignId, architectStatus])
 
   function handleApproved(id: string) {
     setPlaybooks((prev) =>
@@ -214,13 +237,16 @@ export function ArchitectTab({ workspaceId }: { workspaceId: string }) {
     )
   }
 
+  if (!projectId || !campaignId) {
+    return <EmptyState message="Select or create a campaign to see its playbooks." />
+  }
   if (loading) return <EmptyState message="Loading playbooks..." />
   if (error) return <EmptyState message={`Error: ${error}`} />
   if (playbooks.length === 0) {
     return (
       <EmptyState
         message="No campaign playbooks yet."
-        hint="Ask Vimi to run the Architect Agent once Intel has completed."
+        hint="Ask Vimi to run the Architect Agent once Research has completed."
       />
     )
   }
@@ -235,6 +261,8 @@ export function ArchitectTab({ workspaceId }: { workspaceId: string }) {
           key={p.id}
           playbook={p}
           workspaceId={workspaceId}
+          projectId={projectId}
+          campaignId={campaignId}
           onApproved={handleApproved}
         />
       ))}

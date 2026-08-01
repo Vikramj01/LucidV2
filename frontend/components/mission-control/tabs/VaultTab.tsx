@@ -1,12 +1,12 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { api } from '@/lib/api'
+import { api, IntegrationPublic } from '@/lib/api'
 
 interface VaultDoc {
   id: string
   name: string
-  source_type: 'pdf' | 'url' | 'free_text'
+  source_type: 'pdf' | 'url' | 'free_text' | 'google_drive' | 'notion'
   status: 'pending' | 'processing' | 'ready' | 'failed'
   chunk_count: number | null
   error_message: string | null
@@ -21,9 +21,11 @@ const STATUS_STYLES: Record<string, string> = {
 }
 
 const SOURCE_ICONS: Record<string, string> = {
-  pdf:        '📄',
-  url:        '🌐',
-  free_text:  '📝',
+  pdf:          '📄',
+  url:          '🌐',
+  free_text:    '📝',
+  google_drive: '📁',
+  notion:       '🗒️',
 }
 
 function DocRow({ doc, workspaceId, onDeleted }: {
@@ -225,12 +227,197 @@ function UploadPdfForm({ workspaceId, onAdded }: {
   )
 }
 
-type AddMode = 'url' | 'text' | 'pdf' | null
+function AddDriveForm({ workspaceId, onAdded }: {
+  workspaceId: string
+  onAdded: () => void
+}) {
+  const [fileId, setFileId] = useState('')
+  const [name, setName] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!fileId.trim()) return
+    setLoading(true)
+    setError(null)
+    try {
+      await api.vault.addDriveFile(workspaceId, { file_id: fileId.trim(), name: name.trim() || fileId.trim() })
+      setFileId('')
+      setName('')
+      onAdded()
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-2">
+      <input
+        type="text"
+        placeholder="Drive file ID or share link"
+        value={fileId}
+        onChange={(e) => setFileId(e.target.value)}
+        className="w-full px-3 py-2 text-xs rounded-md bg-[#0D1117] border border-[#30363D] text-[#E6EDF3] placeholder-[#484F58] focus:outline-none focus:border-[#388BFD]"
+      />
+      <input
+        type="text"
+        placeholder="Label (optional)"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="w-full px-3 py-2 text-xs rounded-md bg-[#0D1117] border border-[#30363D] text-[#E6EDF3] placeholder-[#484F58] focus:outline-none focus:border-[#388BFD]"
+      />
+      {error && <p className="text-xs text-[#F85149]">{error}</p>}
+      <button
+        type="submit"
+        disabled={loading || !fileId.trim()}
+        className="px-3 py-1.5 text-xs font-medium rounded-md bg-[#21262D] text-[#E6EDF3] hover:bg-[#30363D] disabled:opacity-40 transition-colors"
+      >
+        {loading ? 'Adding…' : 'Add from Drive'}
+      </button>
+    </form>
+  )
+}
+
+function AddNotionForm({ workspaceId, onAdded }: {
+  workspaceId: string
+  onAdded: () => void
+}) {
+  const [pageUrl, setPageUrl] = useState('')
+  const [name, setName] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!pageUrl.trim()) return
+    setLoading(true)
+    setError(null)
+    try {
+      await api.vault.addNotionPage(workspaceId, {
+        page_id_or_url: pageUrl.trim(),
+        name: name.trim() || 'Notion page',
+      })
+      setPageUrl('')
+      setName('')
+      onAdded()
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-2">
+      <input
+        type="text"
+        placeholder="Notion page URL or ID"
+        value={pageUrl}
+        onChange={(e) => setPageUrl(e.target.value)}
+        className="w-full px-3 py-2 text-xs rounded-md bg-[#0D1117] border border-[#30363D] text-[#E6EDF3] placeholder-[#484F58] focus:outline-none focus:border-[#388BFD]"
+      />
+      <input
+        type="text"
+        placeholder="Label (optional)"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="w-full px-3 py-2 text-xs rounded-md bg-[#0D1117] border border-[#30363D] text-[#E6EDF3] placeholder-[#484F58] focus:outline-none focus:border-[#388BFD]"
+      />
+      {error && <p className="text-xs text-[#F85149]">{error}</p>}
+      <button
+        type="submit"
+        disabled={loading || !pageUrl.trim()}
+        className="px-3 py-1.5 text-xs font-medium rounded-md bg-[#21262D] text-[#E6EDF3] hover:bg-[#30363D] disabled:opacity-40 transition-colors"
+      >
+        {loading ? 'Adding…' : 'Add from Notion'}
+      </button>
+    </form>
+  )
+}
+
+function IntegrationRow({
+  workspaceId,
+  provider,
+  label,
+  icon,
+  integration,
+  onChanged,
+}: {
+  workspaceId: string
+  provider: 'google_drive' | 'notion'
+  label: string
+  icon: string
+  integration: IntegrationPublic | undefined
+  onChanged: () => void
+}) {
+  const [loading, setLoading] = useState(false)
+  const connected = integration?.status === 'connected'
+
+  async function handleConnect() {
+    setLoading(true)
+    try {
+      // fetch() (not a plain <a href>) so the Bearer token can be attached;
+      // this route requires auth and can't be reached via bare navigation.
+      const { url } = await api.integrations.getConnectUrl(workspaceId, provider)
+      window.location.href = url
+    } catch {
+      setLoading(false)
+    }
+  }
+
+  async function handleDisconnect() {
+    if (!confirm(`Disconnect ${label}?`)) return
+    setLoading(true)
+    try {
+      await api.integrations.disconnect(workspaceId, provider)
+      onChanged()
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between px-3 py-2 rounded-md border border-[#30363D] bg-[#0D1117]">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-base shrink-0">{icon}</span>
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-[#E6EDF3]">{label}</p>
+          {connected && integration?.external_account_label && (
+            <p className="text-[10px] text-[#8B949E] truncate">{integration.external_account_label}</p>
+          )}
+        </div>
+      </div>
+      {connected ? (
+        <button
+          onClick={handleDisconnect}
+          disabled={loading}
+          className="text-[10px] text-[#8B949E] hover:text-[#F85149] disabled:opacity-40 transition-colors shrink-0"
+        >
+          {loading ? '…' : 'Disconnect'}
+        </button>
+      ) : (
+        <button
+          onClick={handleConnect}
+          disabled={loading}
+          className="px-2.5 py-1 text-[10px] font-medium rounded bg-[#21262D] text-[#8B949E] hover:text-[#E6EDF3] disabled:opacity-40 transition-colors shrink-0"
+        >
+          {loading ? 'Connecting…' : 'Connect'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+type AddMode = 'url' | 'text' | 'pdf' | 'drive' | 'notion' | null
 
 export function VaultTab({ workspaceId }: { workspaceId: string }) {
   const [docs, setDocs] = useState<VaultDoc[]>([])
   const [loading, setLoading] = useState(true)
   const [addMode, setAddMode] = useState<AddMode>(null)
+  const [integrations, setIntegrations] = useState<IntegrationPublic[]>([])
 
   function fetchDocs() {
     api.vault.list(workspaceId)
@@ -239,7 +426,11 @@ export function VaultTab({ workspaceId }: { workspaceId: string }) {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { fetchDocs() }, [workspaceId]) // eslint-disable-line
+  function fetchIntegrations() {
+    api.integrations.list(workspaceId).then(setIntegrations).catch(() => {})
+  }
+
+  useEffect(() => { fetchDocs(); fetchIntegrations() }, [workspaceId]) // eslint-disable-line
 
   function handleAdded() {
     setAddMode(null)
@@ -250,14 +441,44 @@ export function VaultTab({ workspaceId }: { workspaceId: string }) {
     setDocs((prev) => prev.filter((d) => d.id !== id))
   }
 
+  const driveIntegration = integrations.find((i) => i.provider === 'google_drive')
+  const notionIntegration = integrations.find((i) => i.provider === 'notion')
+  const driveConnected = driveIntegration?.status === 'connected'
+  const notionConnected = notionIntegration?.status === 'connected'
+
   return (
     <div className="p-6 space-y-5">
+      {/* Connected accounts */}
+      <div>
+        <h2 className="text-xs font-semibold text-[#8B949E] uppercase tracking-wider mb-2">
+          Connected Accounts
+        </h2>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <IntegrationRow
+            workspaceId={workspaceId}
+            provider="google_drive"
+            label="Google Drive"
+            icon="📁"
+            integration={driveIntegration}
+            onChanged={fetchIntegrations}
+          />
+          <IntegrationRow
+            workspaceId={workspaceId}
+            provider="notion"
+            label="Notion"
+            icon="🗒️"
+            integration={notionIntegration}
+            onChanged={fetchIntegrations}
+          />
+        </div>
+      </div>
+
       {/* Header row */}
       <div className="flex items-center justify-between">
         <h2 className="text-xs font-semibold text-[#8B949E] uppercase tracking-wider">
           Brand Voice Vault {!loading && `(${docs.length})`}
         </h2>
-        <div className="flex gap-1.5">
+        <div className="flex flex-wrap gap-1.5 justify-end">
           {(['pdf', 'url', 'text'] as AddMode[]).map((mode) => (
             <button
               key={mode}
@@ -272,6 +493,32 @@ export function VaultTab({ workspaceId }: { workspaceId: string }) {
               {mode === 'pdf' ? '+ PDF' : mode === 'url' ? '+ URL' : '+ Text'}
             </button>
           ))}
+          {driveConnected && (
+            <button
+              onClick={() => setAddMode(addMode === 'drive' ? null : 'drive')}
+              className={[
+                'px-2.5 py-1 text-[10px] font-medium rounded transition-colors',
+                addMode === 'drive'
+                  ? 'bg-[#388BFD] text-white'
+                  : 'bg-[#21262D] text-[#8B949E] hover:text-[#E6EDF3]',
+              ].join(' ')}
+            >
+              + Drive
+            </button>
+          )}
+          {notionConnected && (
+            <button
+              onClick={() => setAddMode(addMode === 'notion' ? null : 'notion')}
+              className={[
+                'px-2.5 py-1 text-[10px] font-medium rounded transition-colors',
+                addMode === 'notion'
+                  ? 'bg-[#388BFD] text-white'
+                  : 'bg-[#21262D] text-[#8B949E] hover:text-[#E6EDF3]',
+              ].join(' ')}
+            >
+              + Notion
+            </button>
+          )}
         </div>
       </div>
 
@@ -284,6 +531,12 @@ export function VaultTab({ workspaceId }: { workspaceId: string }) {
       )}
       {addMode === 'pdf' && (
         <UploadPdfForm workspaceId={workspaceId} onAdded={handleAdded} />
+      )}
+      {addMode === 'drive' && (
+        <AddDriveForm workspaceId={workspaceId} onAdded={handleAdded} />
+      )}
+      {addMode === 'notion' && (
+        <AddNotionForm workspaceId={workspaceId} onAdded={handleAdded} />
       )}
 
       {/* Document list */}

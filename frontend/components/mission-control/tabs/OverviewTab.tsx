@@ -42,7 +42,10 @@ function AgentCard({
 }
 
 export function OverviewTab({ workspaceId: _ }: { workspaceId: string }) {
-  const { intelStatus, architectStatus, intelRunId, architectRunId } = useAgentStore()
+  const {
+    researchStatus, icpStatus, marketSizingStatus, architectStatus,
+    researchRunId, icpRunId, marketSizingRunId, architectRunId,
+  } = useAgentStore()
 
   return (
     <div className="p-6 space-y-6">
@@ -52,14 +55,26 @@ export function OverviewTab({ workspaceId: _ }: { workspaceId: string }) {
         </h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <AgentCard
-            name="Intel Agent"
-            description="Competitor analysis → Market Signal JSON"
-            status={intelStatus}
-            runId={intelRunId}
+            name="Research Agent"
+            description="Competitor analysis → Research Signal JSON"
+            status={researchStatus}
+            runId={researchRunId}
+          />
+          <AgentCard
+            name="ICP Agent"
+            description="Research + Vault → Ideal Customer Profile"
+            status={icpStatus}
+            runId={icpRunId}
+          />
+          <AgentCard
+            name="Market Sizing Agent"
+            description="Research → TAM/SAM/SOM estimate"
+            status={marketSizingStatus}
+            runId={marketSizingRunId}
           />
           <AgentCard
             name="Architect Agent"
-            description="Market Signal + Vault → Campaign Playbook"
+            description="Project intel + Vault → Campaign Playbook"
             status={architectStatus}
             runId={architectRunId}
           />

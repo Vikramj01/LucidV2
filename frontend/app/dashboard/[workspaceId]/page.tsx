@@ -1,90 +1,78 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { use } from 'react'
-import { useAgentStore } from '@/store/agent'
-import { useChatStore } from '@/store/chat'
-import { createClient } from '@/lib/supabase/client'
-import { MissionControlCanvas } from '@/components/mission-control/MissionControlCanvas'
-import { VimiChatPanel } from '@/components/chat/VimiChatPanel'
+import { useRouter } from 'next/navigation'
+import { api, Project } from '@/lib/api'
+import { useProjectStore } from '@/store/project'
+import { DashboardShell } from '@/components/dashboard/DashboardShell'
 
+/**
+ * Workspace root. If the workspace has exactly one active Project with
+ * exactly one active/completed Campaign, redirects straight into the full
+ * dashboard for that campaign. Otherwise renders the shell with no
+ * project/campaign selected — Vimi Chat drives Project creation/selection
+ * from here, and Mission Control shows only the workspace-level tabs
+ * (Overview, Vault) with Project Intelligence and Campaign Execution
+ * disabled until a Project (and Campaign) is picked.
+ */
 export default function WorkspaceDashboardPage({
   params,
 }: {
   params: Promise<{ workspaceId: string }>
 }) {
   const { workspaceId } = use(params)
-  const { setIntelStatus, setArchitectStatus, intelStatus, architectStatus } = useAgentStore()
-  const { phase, setPhase } = useChatStore()
-  const prevIntelStatus = useRef<string>(intelStatus)
-  const prevArchitectStatus = useRef<string>(architectStatus)
+  const router = useRouter()
+  const { clearProject } = useProjectStore()
+  const [checking, setChecking] = useState(true)
 
-  // Realtime: subscribe to agent_runs changes for this workspace
   useEffect(() => {
-    const supabase = createClient()
+    let cancelled = false
 
-    const channel = supabase
-      .channel(`agent_runs:${workspaceId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'agent_runs',
-          filter: `workspace_id=eq.${workspaceId}`,
-        },
-        (payload) => {
-          const run = payload.new as {
-            agent_type: string
-            status: string
-            id: string
+    async function checkForAutoRedirect() {
+      try {
+        const projects = await api.projects.list(workspaceId)
+        const activeProjects = projects.filter((p: Project) => p.status === 'active')
+
+        if (activeProjects.length === 1) {
+          const campaigns = await api.campaigns.list(workspaceId, activeProjects[0].id)
+          if (campaigns.length === 1) {
+            if (!cancelled) {
+              router.replace(
+                `/dashboard/${workspaceId}/projects/${activeProjects[0].id}/campaigns/${campaigns[0].id}`
+              )
+            }
+            return
           }
-          if (run.agent_type === 'intel') {
-            setIntelStatus(run.status as 'queued' | 'running' | 'complete' | 'failed', run.id)
-          } else if (run.agent_type === 'architect') {
-            setArchitectStatus(run.status as 'queued' | 'running' | 'complete' | 'failed', run.id)
+          if (campaigns.length === 0) {
+            if (!cancelled) {
+              router.replace(`/dashboard/${workspaceId}/projects/${activeProjects[0].id}`)
+            }
+            return
           }
         }
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [workspaceId, setIntelStatus, setArchitectStatus])
-
-  // Auto-advance chat phases on agent completion
-  useEffect(() => {
-    if (
-      prevIntelStatus.current !== 'complete' &&
-      intelStatus === 'complete' &&
-      phase === 'INTEL_RUNNING'
-    ) {
-      setPhase('ARCHITECT_SETUP')
+      } catch {
+        // non-fatal — fall through to the project-chooser view
+      }
+      if (!cancelled) setChecking(false)
     }
-    prevIntelStatus.current = intelStatus
-  }, [intelStatus, phase, setPhase])
 
-  useEffect(() => {
-    if (
-      prevArchitectStatus.current !== 'complete' &&
-      architectStatus === 'complete' &&
-      phase === 'ARCHITECT_RUNNING'
-    ) {
-      setPhase('ACTIVE')
-    }
-    prevArchitectStatus.current = architectStatus
-  }, [architectStatus, phase, setPhase])
+    clearProject()
+    checkForAutoRedirect()
 
-  return (
-    <div className="flex flex-1 overflow-hidden">
-      {/* Left 40% — Vimi Chat Panel */}
-      <div className="w-[40%] flex flex-col border-r border-[#30363D] overflow-hidden shrink-0">
-        <VimiChatPanel workspaceId={workspaceId} />
+    return () => { cancelled = true }
+  }, [workspaceId, router, clearProject])
+
+  if (checking) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <div className="flex items-center gap-3 text-[#8B949E]">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#30363D] border-t-[#2D7DD2]" />
+          <span className="text-sm">Loading…</span>
+        </div>
       </div>
+    )
+  }
 
-      {/* Right 60% — Mission Control Canvas */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <MissionControlCanvas workspaceId={workspaceId} />
-      </div>
-    </div>
-  )
+  return <DashboardShell workspaceId={workspaceId} projectId={null} campaignId={null} />
 }

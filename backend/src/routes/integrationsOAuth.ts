@@ -80,7 +80,12 @@ integrationsOAuthRouter.get(
     try {
       const consentUrl =
         provider === 'google_drive' ? getGoogleDriveConsentUrl(state) : getNotionConsentUrl(state)
-      res.redirect(consentUrl)
+      // Returns JSON rather than a 302: this route requires a Bearer JWT
+      // (requireAuth), which only a fetch() call can attach — a plain
+      // browser navigation (<a href>) can't set an Authorization header.
+      // The frontend fetches this, then navigates the browser itself to
+      // the returned url for the actual provider redirect.
+      res.json({ url: consentUrl })
     } catch (err) {
       res.status(500).json({ error: `Failed to build consent URL: ${(err as Error).message}`, code: 'CONFIG_ERROR' })
     }

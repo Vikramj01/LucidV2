@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useChatStore, ChatPhase } from '@/store/chat'
-import { useAgentStore } from '@/store/agent'
+import { useProjectStore } from '@/store/project'
 import { api } from '@/lib/api'
 import { ChatBubble } from './ChatBubble'
 
@@ -11,50 +12,121 @@ import { ChatBubble } from './ChatBubble'
 
 const PHASE_GREETINGS: Partial<Record<ChatPhase, string>> = {
   WELCOME:
-    "Hi, I'm Vimi — your AI marketing strategist. Your workspace is ready. Let's build your Brand Voice Vault first so I understand your brand before we run market intelligence. Add a brand document to get started.",
+    "Hi, I'm Vimi — your AI marketing strategist. Your workspace is ready. Let's build your Brand Voice Vault first so I understand your brand before we start researching. Add a brand document to get started.",
   VAULT_INTRO:
-    "Time to build your Brand Voice Vault. Add PDFs, URLs, or paste text from your brand guidelines, website, or previous campaigns. The more context I have, the sharper your playbooks will be.",
+    "Time to build your Brand Voice Vault. Add PDFs, URLs, connected Drive/Notion documents, or paste text from your brand guidelines, website, or previous campaigns. The more context I have, the sharper your playbooks will be.",
   VAULT_COMPLETE:
-    "Your vault is building. Once the documents are processed, we'll move on to competitor analysis. You can also add more documents any time from the Vault tab.",
-  INTEL_SETUP:
-    "Let's run competitor intelligence. Give me up to 5 competitor URLs and a few industry keywords, and I'll produce a structured Market Signal with gaps and positioning angles.",
-  INTEL_RUNNING:
-    "Intel Agent is running — scraping competitors and extracting insights. This usually takes 30–60 seconds. I'll let you know when it's done.",
+    "Your vault is building. Once the documents are processed, let's start a Project — the container for research that gets reused across every campaign you run under it.",
+  PROJECT_CREATE:
+    "What initiative should this Project cover? Give it a name — e.g. \"Q3 EU Expansion\" or \"Enterprise Tier Launch\".",
+  RESEARCH_SETUP:
+    "Let's run market research for this project. Give me up to 5 competitor URLs, a few industry keywords, and — optionally — any specific questions you want answered. I'll produce a structured Research Signal with gaps and positioning angles.",
+  RESEARCH_RUNNING:
+    "Research Agent is running — scraping competitors and extracting insights. This usually takes 30–60 seconds. I'll let you know when it's done.",
+  ICP_SETUP:
+    "Research is ready. Want me to build an Ideal Customer Profile from it? This is reusable across every campaign in this project.",
+  ICP_RUNNING:
+    "ICP Agent is running — synthesising firmographics and buyer personas from your research and brand vault.",
+  MARKET_SIZING_SETUP:
+    "Want me to size the market too? I'll estimate TAM/SAM/SOM. You can optionally give me a few market-data or analyst-report URLs to ground the estimate — or skip this.",
+  MARKET_SIZING_RUNNING:
+    "Market Sizing Agent is running — estimating TAM/SAM/SOM from your research (and any sources you gave me).",
+  CAMPAIGN_CREATE:
+    "Project intelligence is ready. Let's build a Campaign — give it a name, a goal, and the channels you're targeting, and I'll generate the playbook immediately.",
   ARCHITECT_SETUP:
-    "Market Signal is ready. Now let's build your Campaign Playbook. What's the campaign goal and which channels are you targeting?",
+    "Ready to (re-)generate the Campaign Playbook for this campaign using the latest project intelligence and brand vault.",
   ARCHITECT_RUNNING:
-    "Architect Agent is running — combining your Brand Voice Vault with the Market Signal to generate your Campaign Playbook. Almost there.",
+    "Architect Agent is running — combining your Brand Voice Vault with the project's research, ICP, and market sizing to generate your Campaign Playbook. Almost there.",
   ACTIVE:
-    "Your Campaign Playbook is ready in Mission Control. Review and approve it when you're happy. I'm here if you want to adjust the brief or run a new analysis.",
+    "Your Campaign Playbook is ready in Mission Control. Review and approve it when you're happy. I'm here if you want to start a new campaign, refresh the research, or switch projects.",
 }
 
 // ── Phase input components ────────────────────────────────────────────────────
 
-function IntelSetupInput({
+function ProjectCreateInput({
   workspaceId,
-  onSubmit,
+  onCreated,
 }: {
   workspaceId: string
-  onSubmit: (urls: string[], keywords: string) => void
+  onCreated: (project: { id: string; name: string }) => void
 }) {
-  const [urls, setUrls] = useState('')
-  const [keywords, setKeywords] = useState('')
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const urlList = urls
-      .split('\n')
-      .map((u) => u.trim())
-      .filter(Boolean)
+    if (!name.trim()) return
+    setLoading(true)
+    setError(null)
+    try {
+      const project = await api.projects.create(workspaceId, {
+        name: name.trim(),
+        description: description.trim() || undefined,
+      })
+      onCreated({ id: project.id, name: project.name })
+    } catch (err) {
+      setError(String(err))
+      setLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-2">
+      <input
+        type="text"
+        placeholder="Project name (e.g. Q3 EU Expansion)"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="w-full px-3 py-2 text-xs rounded-lg bg-[#0D1117] border border-[#30363D] text-[#E6EDF3] placeholder-[#484F58] focus:outline-none focus:border-[#388BFD]"
+      />
+      <input
+        type="text"
+        placeholder="Description (optional)"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        className="w-full px-3 py-2 text-xs rounded-lg bg-[#0D1117] border border-[#30363D] text-[#E6EDF3] placeholder-[#484F58] focus:outline-none focus:border-[#388BFD]"
+      />
+      {error && <p className="text-xs text-[#F85149]">{error}</p>}
+      <button
+        type="submit"
+        disabled={loading || !name.trim()}
+        className="w-full py-2 text-xs font-medium rounded-lg bg-[#2D7DD2] text-white hover:bg-[#388BFD] disabled:opacity-40 transition-colors"
+      >
+        {loading ? 'Creating project…' : 'Create Project'}
+      </button>
+    </form>
+  )
+}
+
+function ResearchSetupInput({
+  workspaceId,
+  projectId,
+  onSubmit,
+}: {
+  workspaceId: string
+  projectId: string
+  onSubmit: (urls: string[], keywords: string) => void
+}) {
+  const [urls, setUrls] = useState('')
+  const [keywords, setKeywords] = useState('')
+  const [questions, setQuestions] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const urlList = urls.split('\n').map((u) => u.trim()).filter(Boolean)
+    const questionList = questions.split('\n').map((q) => q.trim()).filter(Boolean)
     if (urlList.length === 0) return
     setLoading(true)
     setError(null)
     try {
-      await api.agents.runIntel(workspaceId, {
+      await api.agents.runResearch(workspaceId, projectId, {
         competitor_urls: urlList,
         industry_keywords: keywords.trim(),
+        research_questions: questionList,
       })
       onSubmit(urlList, keywords)
     } catch (err) {
@@ -79,33 +151,153 @@ function IntelSetupInput({
         onChange={(e) => setKeywords(e.target.value)}
         className="w-full px-3 py-2 text-xs rounded-lg bg-[#0D1117] border border-[#30363D] text-[#E6EDF3] placeholder-[#484F58] focus:outline-none focus:border-[#388BFD]"
       />
+      <textarea
+        placeholder={"Anything specific you want answered? (optional, one per line)"}
+        value={questions}
+        onChange={(e) => setQuestions(e.target.value)}
+        rows={2}
+        className="w-full px-3 py-2 text-xs rounded-lg bg-[#0D1117] border border-[#30363D] text-[#E6EDF3] placeholder-[#484F58] focus:outline-none focus:border-[#388BFD] resize-none"
+      />
       {error && <p className="text-xs text-[#F85149]">{error}</p>}
       <button
         type="submit"
         disabled={loading || !urls.trim()}
         className="w-full py-2 text-xs font-medium rounded-lg bg-[#2D7DD2] text-white hover:bg-[#388BFD] disabled:opacity-40 transition-colors"
       >
-        {loading ? 'Launching Intel Agent…' : 'Run Intel Agent'}
+        {loading ? 'Launching Research Agent…' : 'Run Research Agent'}
       </button>
     </form>
+  )
+}
+
+function SkippableAgentInput({
+  runLabel,
+  runningLabel,
+  onRun,
+  onSkip,
+  extra,
+}: {
+  runLabel: string
+  runningLabel: string
+  onRun: () => Promise<void>
+  onSkip: () => void
+  extra?: React.ReactNode
+}) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleRun() {
+    setLoading(true)
+    setError(null)
+    try {
+      await onRun()
+    } catch (err) {
+      setError(String(err))
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {extra}
+      {error && <p className="text-xs text-[#F85149]">{error}</p>}
+      <div className="flex gap-2">
+        <button
+          onClick={handleRun}
+          disabled={loading}
+          className="flex-1 py-2 text-xs font-medium rounded-lg bg-[#2D7DD2] text-white hover:bg-[#388BFD] disabled:opacity-40 transition-colors"
+        >
+          {loading ? runningLabel : runLabel}
+        </button>
+        <button
+          onClick={onSkip}
+          disabled={loading}
+          className="px-3 py-2 text-xs font-medium rounded-lg bg-[#21262D] text-[#8B949E] hover:text-[#E6EDF3] disabled:opacity-40 transition-colors"
+        >
+          Skip
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function IcpSetupInput({
+  workspaceId,
+  projectId,
+  onRun,
+  onSkip,
+}: {
+  workspaceId: string
+  projectId: string
+  onRun: () => void
+  onSkip: () => void
+}) {
+  return (
+    <SkippableAgentInput
+      runLabel="Build ICP Profile"
+      runningLabel="Launching ICP Agent…"
+      onSkip={onSkip}
+      onRun={async () => {
+        await api.agents.runIcp(workspaceId, projectId, {})
+        onRun()
+      }}
+    />
+  )
+}
+
+function MarketSizingSetupInput({
+  workspaceId,
+  projectId,
+  onRun,
+  onSkip,
+}: {
+  workspaceId: string
+  projectId: string
+  onRun: () => void
+  onSkip: () => void
+}) {
+  const [urls, setUrls] = useState('')
+
+  return (
+    <SkippableAgentInput
+      runLabel="Run Market Sizing"
+      runningLabel="Launching Market Sizing Agent…"
+      onSkip={onSkip}
+      extra={
+        <textarea
+          placeholder="Analyst report or market-data URLs (optional, one per line)"
+          value={urls}
+          onChange={(e) => setUrls(e.target.value)}
+          rows={2}
+          className="w-full px-3 py-2 text-xs rounded-lg bg-[#0D1117] border border-[#30363D] text-[#E6EDF3] placeholder-[#484F58] focus:outline-none focus:border-[#388BFD] resize-none"
+        />
+      }
+      onRun={async () => {
+        const urlList = urls.split('\n').map((u) => u.trim()).filter(Boolean)
+        await api.agents.runMarketSizing(workspaceId, projectId, { market_data_urls: urlList })
+        onRun()
+      }}
+    />
   )
 }
 
 const CHANNELS = ['linkedin', 'google_search', 'google_display', 'meta', 'email']
 const GOALS = ['awareness', 'leads', 'pipeline', 'retention']
 
-function ArchitectSetupInput({
+function CampaignCreateInput({
   workspaceId,
-  onSubmit,
+  projectId,
+  onCreated,
 }: {
   workspaceId: string
-  onSubmit: (goal: string, channels: string[]) => void
+  projectId: string
+  onCreated: (campaign: { id: string; name: string }) => void
 }) {
+  const [name, setName] = useState('')
   const [goal, setGoal] = useState('leads')
   const [selectedChannels, setSelectedChannels] = useState<string[]>(['linkedin'])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const latestSignalId = useAgentStore((s) => s.latestSignalId)
 
   function toggleChannel(ch: string) {
     setSelectedChannels((prev) =>
@@ -115,16 +307,17 @@ function ArchitectSetupInput({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (selectedChannels.length === 0) return
+    if (!name.trim() || selectedChannels.length === 0) return
     setLoading(true)
     setError(null)
     try {
-      await api.agents.runArchitect(workspaceId, {
-        market_signal_id: latestSignalId ?? undefined,
+      const campaign = await api.campaigns.create(workspaceId, projectId, {
+        name: name.trim(),
         campaign_goal: goal,
         channels: selectedChannels,
       })
-      onSubmit(goal, selectedChannels)
+      await api.agents.runArchitect(workspaceId, projectId, campaign.id, {})
+      onCreated({ id: campaign.id, name: campaign.name })
     } catch (err) {
       setError(String(err))
       setLoading(false)
@@ -133,6 +326,14 @@ function ArchitectSetupInput({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
+      <input
+        type="text"
+        placeholder="Campaign name (e.g. LinkedIn ABM Push)"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="w-full px-3 py-2 text-xs rounded-lg bg-[#0D1117] border border-[#30363D] text-[#E6EDF3] placeholder-[#484F58] focus:outline-none focus:border-[#388BFD]"
+      />
+
       <div>
         <p className="text-[10px] text-[#8B949E] mb-1.5">Campaign goal</p>
         <div className="flex flex-wrap gap-1.5">
@@ -178,12 +379,52 @@ function ArchitectSetupInput({
       {error && <p className="text-xs text-[#F85149]">{error}</p>}
       <button
         type="submit"
-        disabled={loading || selectedChannels.length === 0}
+        disabled={loading || !name.trim() || selectedChannels.length === 0}
         className="w-full py-2 text-xs font-medium rounded-lg bg-[#238636] text-white hover:bg-[#2EA043] disabled:opacity-40 transition-colors"
       >
-        {loading ? 'Launching Architect Agent…' : 'Build Campaign Playbook'}
+        {loading ? 'Creating campaign & launching Architect…' : 'Create Campaign & Build Playbook'}
       </button>
     </form>
+  )
+}
+
+function ArchitectSetupInput({
+  workspaceId,
+  projectId,
+  campaignId,
+  onSubmit,
+}: {
+  workspaceId: string
+  projectId: string
+  campaignId: string
+  onSubmit: () => void
+}) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleRun() {
+    setLoading(true)
+    setError(null)
+    try {
+      await api.agents.runArchitect(workspaceId, projectId, campaignId, {})
+      onSubmit()
+    } catch (err) {
+      setError(String(err))
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {error && <p className="text-xs text-[#F85149]">{error}</p>}
+      <button
+        onClick={handleRun}
+        disabled={loading}
+        className="w-full py-2 text-xs font-medium rounded-lg bg-[#238636] text-white hover:bg-[#2EA043] disabled:opacity-40 transition-colors"
+      >
+        {loading ? 'Launching Architect Agent…' : 'Run Architect Agent'}
+      </button>
+    </div>
   )
 }
 
@@ -241,9 +482,18 @@ function AgentSpinner({ label }: { label: string }) {
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export function VimiChatPanel({ workspaceId }: { workspaceId: string }) {
+export function VimiChatPanel({
+  workspaceId,
+  projectId,
+  campaignId,
+}: {
+  workspaceId: string
+  projectId: string | null
+  campaignId: string | null
+}) {
   const { phase, messages, setPhase, addMessage } = useChatStore()
-  const { setLatestSignalId } = useAgentStore()
+  const { setProject, setCampaign } = useProjectStore()
+  const router = useRouter()
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Send Vimi's opening message when phase changes (if not already sent for this phase)
@@ -265,53 +515,109 @@ export function VimiChatPanel({ workspaceId }: { workspaceId: string }) {
 
   function handleUserMessage(text: string) {
     addMessage('user', text)
-    // Simple keyword routing for ACTIVE phase
     const lower = text.toLowerCase()
-    if (lower.includes('intel') || lower.includes('competitor')) {
-      addMessage('vimi', "To run a new Intel analysis, I'll need competitor URLs and keywords. Switch to the Intel Setup below or type the URLs here.")
-    } else if (lower.includes('playbook') || lower.includes('architect')) {
-      addMessage('vimi', "To generate a new Campaign Playbook, I need to know the campaign goal and target channels. Use the Architect Setup below.")
+    if (lower.includes('research') || lower.includes('competitor')) {
+      addMessage('vimi', "To run new research, I'll need competitor URLs and keywords. Use the Research Setup below or ask me to switch to it.")
+    } else if (lower.includes('playbook') || lower.includes('architect') || lower.includes('campaign')) {
+      addMessage('vimi', "To build a new campaign playbook, start a new Campaign — I'll need a name, goal, and channels.")
     } else if (lower.includes('vault') || lower.includes('document')) {
       addMessage('vimi', "You can add documents to the Brand Voice Vault using the Vault tab in Mission Control on the right.")
     } else {
-      addMessage('vimi', "Got it. Is there anything specific you'd like to adjust — campaign goal, channels, or competitor list?")
+      addMessage('vimi', "Got it. Is there anything specific you'd like to adjust — project, campaign goal, channels, or research inputs?")
     }
   }
 
-  function handleIntelSubmit(urls: string[], _keywords: string) {
-    addMessage('user', `Running Intel Agent on: ${urls.join(', ')}`)
-    addMessage('vimi', "Intel Agent launched. I'll update you when the Market Signal is ready — watch the status in Mission Control.")
-    setPhase('INTEL_RUNNING')
+  function handleProjectCreated(project: { id: string; name: string }) {
+    addMessage('user', `Create project: ${project.name}`)
+    addMessage('vimi', `Project "${project.name}" created. Let's run research for it.`)
+    setProject(project)
+    setPhase('RESEARCH_SETUP')
+    router.push(`/dashboard/${workspaceId}/projects/${project.id}`)
   }
 
-  async function handleArchitectSubmit(goal: string, channels: string[]) {
-    addMessage('user', `Campaign goal: ${goal} · Channels: ${channels.join(', ')}`)
-    addMessage('vimi', "Architect Agent launched. Combining your Brand Voice Vault with the Market Signal now.")
+  function handleResearchSubmit(urls: string[]) {
+    addMessage('user', `Running Research Agent on: ${urls.join(', ')}`)
+    addMessage('vimi', "Research Agent launched. I'll update you when the Research Signal is ready — watch the status in Mission Control.")
+    setPhase('RESEARCH_RUNNING')
+  }
+
+  function handleIcpRun() {
+    addMessage('user', 'Build ICP profile')
+    addMessage('vimi', "ICP Agent launched — synthesising firmographics and buyer personas.")
+    setPhase('ICP_RUNNING')
+  }
+
+  function handleIcpSkip() {
+    addMessage('user', 'Skip ICP')
+    setPhase('MARKET_SIZING_SETUP')
+  }
+
+  function handleMarketSizingRun() {
+    addMessage('user', 'Run market sizing')
+    addMessage('vimi', "Market Sizing Agent launched — estimating TAM/SAM/SOM.")
+    setPhase('MARKET_SIZING_RUNNING')
+  }
+
+  function handleMarketSizingSkip() {
+    addMessage('user', 'Skip market sizing')
+    setPhase('CAMPAIGN_CREATE')
+  }
+
+  function handleCampaignCreated(campaign: { id: string; name: string }) {
+    if (!projectId) return
+    addMessage('user', `Create campaign: ${campaign.name}`)
+    addMessage('vimi', "Campaign created. Architect Agent launched — combining your project intelligence with the Brand Voice Vault.")
+    setCampaign(campaign)
     setPhase('ARCHITECT_RUNNING')
+    router.push(`/dashboard/${workspaceId}/projects/${projectId}/campaigns/${campaign.id}`)
+  }
 
-    // Fetch latest signal to store its ID for the next run
-    try {
-      const signals = await api.outputs.listSignals(workspaceId) as Array<{ id: string }>
-      if (signals.length > 0) {
-        setLatestSignalId(signals[0].id)
-      }
-    } catch {
-      // non-fatal
-    }
+  function handleArchitectRerun() {
+    addMessage('user', 'Re-run Architect Agent')
+    addMessage('vimi', "Architect Agent launched again with the latest project intelligence.")
+    setPhase('ARCHITECT_RUNNING')
   }
 
   const renderInput = () => {
     switch (phase) {
-      case 'INTEL_SETUP':
-        return (
-          <IntelSetupInput workspaceId={workspaceId} onSubmit={handleIntelSubmit} />
-        )
-      case 'INTEL_RUNNING':
-        return <AgentSpinner label="Intel Agent running…" />
+      case 'PROJECT_CREATE':
+        return <ProjectCreateInput workspaceId={workspaceId} onCreated={handleProjectCreated} />
+      case 'RESEARCH_SETUP':
+        return projectId ? (
+          <ResearchSetupInput workspaceId={workspaceId} projectId={projectId} onSubmit={handleResearchSubmit} />
+        ) : null
+      case 'RESEARCH_RUNNING':
+        return <AgentSpinner label="Research Agent running…" />
+      case 'ICP_SETUP':
+        return projectId ? (
+          <IcpSetupInput workspaceId={workspaceId} projectId={projectId} onRun={handleIcpRun} onSkip={handleIcpSkip} />
+        ) : null
+      case 'ICP_RUNNING':
+        return <AgentSpinner label="ICP Agent running…" />
+      case 'MARKET_SIZING_SETUP':
+        return projectId ? (
+          <MarketSizingSetupInput
+            workspaceId={workspaceId}
+            projectId={projectId}
+            onRun={handleMarketSizingRun}
+            onSkip={handleMarketSizingSkip}
+          />
+        ) : null
+      case 'MARKET_SIZING_RUNNING':
+        return <AgentSpinner label="Market Sizing Agent running…" />
+      case 'CAMPAIGN_CREATE':
+        return projectId ? (
+          <CampaignCreateInput workspaceId={workspaceId} projectId={projectId} onCreated={handleCampaignCreated} />
+        ) : null
       case 'ARCHITECT_SETUP':
-        return (
-          <ArchitectSetupInput workspaceId={workspaceId} onSubmit={handleArchitectSubmit} />
-        )
+        return projectId && campaignId ? (
+          <ArchitectSetupInput
+            workspaceId={workspaceId}
+            projectId={projectId}
+            campaignId={campaignId}
+            onSubmit={handleArchitectRerun}
+          />
+        ) : null
       case 'ARCHITECT_RUNNING':
         return <AgentSpinner label="Architect Agent generating your playbook…" />
       default:
@@ -319,36 +625,58 @@ export function VimiChatPanel({ workspaceId }: { workspaceId: string }) {
     }
   }
 
-  // Quick-action buttons for WELCOME and VAULT_COMPLETE phases
+  // Quick-action buttons, contextual to phase and current selection
   const quickActions: { label: string; action: () => void }[] = (() => {
     if (phase === 'WELCOME' || phase === 'VAULT_INTRO' || phase === 'VAULT_COMPLETE') {
       return [
         {
-          label: 'Start Intel Analysis',
+          label: 'Create Project',
           action: () => {
-            addMessage('user', 'Start competitor analysis')
-            setPhase('INTEL_SETUP')
+            addMessage('user', 'Create a new project')
+            setPhase('PROJECT_CREATE')
           },
         },
       ]
     }
     if (phase === 'ACTIVE') {
-      return [
-        {
-          label: 'Run new Intel',
-          action: () => {
-            addMessage('user', 'Run new Intel analysis')
-            setPhase('INTEL_SETUP')
+      const actions: { label: string; action: () => void }[] = []
+      if (projectId) {
+        actions.push(
+          {
+            label: 'New Campaign',
+            action: () => {
+              addMessage('user', 'Start a new campaign in this project')
+              setPhase('CAMPAIGN_CREATE')
+            },
           },
-        },
-        {
-          label: 'New Playbook',
-          action: () => {
-            addMessage('user', 'Create new campaign playbook')
-            setPhase('ARCHITECT_SETUP')
+          {
+            label: 'Run new Research',
+            action: () => {
+              addMessage('user', 'Run new research')
+              setPhase('RESEARCH_SETUP')
+            },
           },
-        },
-      ]
+          {
+            label: 'Run ICP',
+            action: () => {
+              addMessage('user', 'Run ICP')
+              setPhase('ICP_SETUP')
+            },
+          },
+          {
+            label: 'Run Market Sizing',
+            action: () => {
+              addMessage('user', 'Run market sizing')
+              setPhase('MARKET_SIZING_SETUP')
+            },
+          }
+        )
+      }
+      actions.push({
+        label: 'Switch / New Project',
+        action: () => router.push(`/dashboard/${workspaceId}`),
+      })
+      return actions
     }
     return []
   })()
