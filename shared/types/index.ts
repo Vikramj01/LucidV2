@@ -10,13 +10,17 @@ export type UserRole = 'org_admin' | 'workspace_member' | 'super_admin'
 export type UserStatus = 'active' | 'suspended' | 'invited'
 export type AgentMode = 'approval_gated' | 'autonomous'
 export type AgentRunStatus = 'queued' | 'running' | 'complete' | 'failed'
-export type AgentType = 'intel' | 'architect' | 'builder' | 'analyst' | 'vault_ingest'
+export type AgentType = 'research' | 'architect' | 'builder' | 'analyst' | 'vault_ingest' | 'icp' | 'market_sizing'
 export type VaultDocStatus = 'queued' | 'processing' | 'ready' | 'failed'
-export type VaultSourceType = 'pdf' | 'url' | 'free_text'
+export type VaultSourceType = 'pdf' | 'url' | 'free_text' | 'google_drive' | 'notion'
 export type CampaignGoal = 'awareness' | 'leads' | 'pipeline' | 'retention'
 export type CampaignChannel = 'linkedin' | 'google_search' | 'google_display' | 'meta' | 'email'
 export type PlaybookStatus = 'draft' | 'approved' | 'archived'
-export type CreditActionType = 'intel_run' | 'architect_run' | 'vault_ingest'
+export type CreditActionType = 'research_run' | 'architect_run' | 'vault_ingest' | 'icp_run' | 'market_sizing_run'
+export type ProjectStatus = 'active' | 'archived'
+export type CampaignStatus = 'active' | 'completed' | 'archived'
+export type IntegrationProvider = 'google_drive' | 'notion'
+export type IntegrationStatus = 'connected' | 'disconnected' | 'error'
 
 // ---- Core entities ----
 
@@ -62,6 +66,36 @@ export interface WorkspaceMember {
   created_at: string
 }
 
+// ---- Projects & Campaigns ----
+// Project = reusable knowledge container (Research/ICP/Market Sizing live here,
+// shared across every Campaign underneath it). Campaign = an individual
+// execution push (Architect Agent runs here). Both soft-delete via
+// status = 'archived' — there is no hard-delete endpoint for either.
+
+export interface Project {
+  id: string
+  workspace_id: string
+  name: string
+  description: string | null
+  status: ProjectStatus
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface Campaign {
+  id: string
+  workspace_id: string
+  project_id: string
+  name: string
+  campaign_goal: CampaignGoal
+  channels: CampaignChannel[]
+  status: CampaignStatus
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
 // ---- Brand Voice Vault ----
 
 export interface VaultDocument {
@@ -77,6 +111,32 @@ export interface VaultDocument {
   created_by: string
   created_at: string
   updated_at: string
+  integration_id: string | null
+  external_file_id: string | null
+  external_file_url: string | null
+}
+
+// Status-only view of a workspace's Drive/Notion connection. The
+// access_token_encrypted / refresh_token_encrypted / token_expires_at
+// columns are NOT selectable by the authenticated Postgres role (see
+// docs/Lucid_v2_schema.sql — column-level GRANT) and so must never appear
+// here: any route that forwards the caller's own JWT literally cannot read
+// them, and any route using the service-role key must not leak them to the
+// frontend either.
+export interface WorkspaceIntegration {
+  id: string
+  workspace_id: string
+  provider: IntegrationProvider
+  status: IntegrationStatus
+  external_account_id: string | null
+  external_account_label: string | null
+  scopes: string[]
+  connected_by: string
+  connected_at: string
+  last_synced_at: string | null
+  error_message: string | null
+  created_at: string
+  updated_at: string
 }
 
 // ---- Agent Runs ----
@@ -84,6 +144,8 @@ export interface VaultDocument {
 export interface AgentRun {
   id: string
   workspace_id: string
+  project_id: string | null
+  campaign_id: string | null
   agent_type: AgentType
   status: AgentRunStatus
   job_id: string | null
@@ -96,7 +158,9 @@ export interface AgentRun {
   created_at: string
 }
 
-// ---- Intel Agent ----
+// ---- Research Agent ----
+// (renamed + broadened from v1.0's Intel Agent — schema itself is
+// unchanged from v1.0's Market Signal, just project-scoped now)
 
 export interface CompetitorProfile {
   url: string
@@ -106,9 +170,10 @@ export interface CompetitorProfile {
   primary_cta: string
 }
 
-export interface MarketSignal {
+export interface ResearchSignal {
   id: string
   workspace_id: string
+  project_id: string
   agent_run_id: string
   competitors_analysed: string[]
   competitor_profiles: CompetitorProfile[]
@@ -119,50 +184,98 @@ export interface MarketSignal {
   created_at: string
 }
 
-// ---- Architect Agent ----
+// ---- ICP Agent ----
 
-export interface AdCopyVariant {
-  format: string
-  headline: string
-  body: string
+export interface IcpFirmographics {
+  company_size: string
+  industry: string[]
+  revenue_range: string
+  geography: string[]
+}
+
+export interface IcpPersona {
+  title: string
+  department: string
+  seniority: string
+  pain_points: string[]
+  buying_triggers: string[]
+  decision_role: string
+}
+
+export interface IcpProfile {
+  id: string
+  workspace_id: string
+  project_id: string
+  agent_run_id: string
+  research_signal_id: string | null
+  firmographics: IcpFirmographics
+  personas: IcpPersona[]
+  pain_points: string[]
+  buying_triggers: string[]
+  sources: string[]
+  created_at: string
+}
+
+// ---- Market Sizing Agent ----
+
+export interface MarketSizeEstimate {
+  value: string
+  currency: string
+  methodology: string
+  assumptions: string[]
+}
+
+export interface MarketSizingReport {
+  id: string
+  workspace_id: string
+  project_id: string
+  agent_run_id: string
+  research_signal_id: string | null
+  tam_estimate: MarketSizeEstimate
+  sam_estimate: MarketSizeEstimate
+  som_estimate: MarketSizeEstimate
+  methodology_notes: string
+  sources: string[]
+  created_at: string
+}
+
+// ---- Architect Agent ----
+// playbook_content shape matches what generate_node.py (agent-service)
+// actually emits and campaign_playbooks.playbook_content actually stores —
+// code is ground truth here, this previously described a different,
+// never-implemented shape (nested per-channel objects with ad copy
+// variants). See docs/Lucid_v2_PRD_MVP1.md §12 migration notes.
+
+export interface MessagingFramework {
+  primary_message: string
+  proof_points: string[]
   cta: string
 }
 
-export interface CampaignPhase {
-  phase: string
-  budget_pct: number
-  duration_days: number
-}
-
-export interface MessagingFramework {
-  hero_message: string
-  supporting_points: string[]
-  proof_points: string[]
-}
-
-export interface SuccessMetric {
-  kpi: string
-  target: string
-}
-
-export interface ChannelPlaybook {
-  strategy_rationale: string
-  campaign_phases: CampaignPhase[]
-  messaging_framework: MessagingFramework
-  ad_copy_variants: AdCopyVariant[]
-  success_metrics: SuccessMetric[]
+export interface ChannelPlan {
+  channel: CampaignChannel
+  objective: string
+  content_themes: string[]
+  kpis: string[]
 }
 
 export interface PlaybookContent {
-  channels: Partial<Record<CampaignChannel, ChannelPlaybook>>
-  sources: string[]
+  executive_summary: string
+  messaging_framework: MessagingFramework
+  channel_plans: ChannelPlan[]
+  differentiation: string
+  risk_flags: string[]
 }
 
 export interface CampaignPlaybook {
   id: string
   workspace_id: string
+  project_id: string
+  campaign_id: string
   agent_run_id: string
-  market_signal_id: string | null
+  research_signal_id: string | null
+  icp_profile_id: string | null
+  market_sizing_report_id: string | null
   campaign_goal: CampaignGoal
   channels: CampaignChannel[]
   winning_angle: string
@@ -193,7 +306,7 @@ export interface CreditLedgerEntry {
 
 export interface RedisJob {
   job_id: string
-  job_type: 'intel_run' | 'architect_run' | 'vault_ingest'
+  job_type: 'research_run' | 'icp_run' | 'market_sizing_run' | 'architect_run' | 'vault_ingest'
   workspace_id: string
   org_id: string
   payload: Record<string, unknown>
