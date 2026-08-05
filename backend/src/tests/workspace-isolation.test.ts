@@ -8,7 +8,7 @@
  * Requires SUPABASE_URL and SUPABASE_ANON_KEY set in environment.
  * Two test user JWTs must be provided via env vars below.
  */
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = process.env.SUPABASE_URL!
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!
@@ -17,6 +17,29 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY!
 const USER_A_JWT = process.env.TEST_USER_A_JWT
 const USER_B_JWT = process.env.TEST_USER_B_JWT
 const WORKSPACE_B_ID = process.env.TEST_WORKSPACE_B_ID
+
+async function checkBlocked(
+  clientA: SupabaseClient,
+  table: string,
+  filterColumn: string,
+  workspaceBId: string
+): Promise<boolean> {
+  const { data, error } = await clientA
+    .from(table)
+    .select('*')
+    .eq(filterColumn, workspaceBId)
+
+  if (error) {
+    console.log(`✓ RLS blocked cross-workspace ${table} read (returned error):`, error.message)
+    return true
+  }
+  if (!data || data.length === 0) {
+    console.log(`✓ RLS blocked cross-workspace ${table} read (returned empty array)`)
+    return true
+  }
+  console.error(`✗ ISOLATION FAILURE: User A could read Workspace B ${table}!`, data)
+  return false
+}
 
 async function runIsolationTest(): Promise<void> {
   if (!USER_A_JWT || !USER_B_JWT || !WORKSPACE_B_ID) {
@@ -31,44 +54,24 @@ async function runIsolationTest(): Promise<void> {
     auth: { persistSession: false },
   })
 
-  // Attempt to read Workspace B's market_signals as User A
-  const { data, error } = await clientA
-    .from('market_signals')
-    .select('*')
-    .eq('workspace_id', WORKSPACE_B_ID)
+  // Tables scoped directly by workspace_id
+  const workspaceScopedTables: [table: string, column: string][] = [
+    ['research_signals', 'workspace_id'],
+    ['icp_profiles', 'workspace_id'],
+    ['market_sizing_reports', 'workspace_id'],
+    ['vault_documents', 'workspace_id'],
+    ['campaign_playbooks', 'workspace_id'],
+    ['projects', 'workspace_id'],
+    ['campaigns', 'workspace_id'],
+  ]
 
-  if (error) {
-    console.log('✓ RLS blocked cross-workspace read (returned error):', error.message)
-  } else if (!data || data.length === 0) {
-    console.log('✓ RLS blocked cross-workspace read (returned empty array)')
-  } else {
-    console.error('✗ ISOLATION FAILURE: User A could read Workspace B data!', data)
-    process.exit(1)
+  let allPassed = true
+  for (const [table, column] of workspaceScopedTables) {
+    const passed = await checkBlocked(clientA, table, column, WORKSPACE_B_ID)
+    allPassed = allPassed && passed
   }
 
-  // Same check for vault_documents
-  const { data: vaultData } = await clientA
-    .from('vault_documents')
-    .select('*')
-    .eq('workspace_id', WORKSPACE_B_ID)
-
-  if (!vaultData || vaultData.length === 0) {
-    console.log('✓ RLS blocked cross-workspace vault_documents read')
-  } else {
-    console.error('✗ ISOLATION FAILURE: User A could read Workspace B vault documents!', vaultData)
-    process.exit(1)
-  }
-
-  // Same check for campaign_playbooks
-  const { data: pbData } = await clientA
-    .from('campaign_playbooks')
-    .select('*')
-    .eq('workspace_id', WORKSPACE_B_ID)
-
-  if (!pbData || pbData.length === 0) {
-    console.log('✓ RLS blocked cross-workspace campaign_playbooks read')
-  } else {
-    console.error('✗ ISOLATION FAILURE: User A could read Workspace B playbooks!', pbData)
+  if (!allPassed) {
     process.exit(1)
   }
 

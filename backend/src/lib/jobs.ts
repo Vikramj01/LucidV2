@@ -3,7 +3,7 @@ import { getRedis, QUEUE_KEY } from './redis'
 
 export interface RedisJob {
   job_id: string
-  job_type: 'intel_run' | 'architect_run' | 'vault_ingest'
+  job_type: 'research_run' | 'icp_run' | 'market_sizing_run' | 'architect_run' | 'vault_ingest'
   workspace_id: string
   org_id: string
   payload: Record<string, unknown>
