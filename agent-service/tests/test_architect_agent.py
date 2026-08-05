@@ -113,8 +113,8 @@ store_node = store_mod.store_node
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
-MARKET_SIGNAL = {
-    "id": "ms-001",
+RESEARCH_SIGNAL = {
+    "id": "rs-001",
     "market_gaps": ["No AI assistant", "Poor onboarding"],
     "recommended_angles": ["AI-first approach", "5-minute onboarding"],
     "intent_triggers": ["Hiring ops staff"],
@@ -124,10 +124,12 @@ MARKET_SIGNAL = {
 BASE_STATE = {
     "agent_run_id": "run-xyz",
     "workspace_id": "ws-456",
-    "market_signal_id": "ms-001",
+    "project_id": "proj-789",
+    "campaign_id": "camp-101",
+    "research_signal_id": "rs-001",
     "campaign_goal": "leads",
     "channels": ["linkedin", "email"],
-    "market_signal": MARKET_SIGNAL,
+    "research_signal": RESEARCH_SIGNAL,
     "vault_chunks": [],
     "playbook_data": {},
     "playbook_id": "",

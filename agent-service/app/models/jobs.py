@@ -21,13 +21,17 @@ class VaultIngestPayload(BaseModel):
     url: str | None = None
     text: str | None = None
 
-class IntelRunPayload(BaseModel):
+class ResearchRunPayload(BaseModel):
     agent_run_id: str
+    project_id: str
     competitor_urls: list[str]
     industry_keywords: str
+    research_questions: str = ""
 
 class ArchitectRunPayload(BaseModel):
     agent_run_id: str
-    market_signal_id: str
+    project_id: str
+    campaign_id: str
+    research_signal_id: str | None = None
     campaign_goal: str
     channels: list[str]

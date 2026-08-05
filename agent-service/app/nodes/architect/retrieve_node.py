@@ -1,7 +1,7 @@
 """
 retrieve_node: fetch Brand Voice Vault context for the Architect Agent.
 
-Embeds a retrieval query built from the market signal + campaign goal,
+Embeds a retrieval query built from the research signal + campaign goal,
 then calls the retrieve_vault_context RPC to get the top-K chunks.
 """
 from __future__ import annotations
@@ -25,15 +25,15 @@ TOP_K = 8
 
 def retrieve_node(state: "ArchitectState") -> dict:
     workspace_id: str = state["workspace_id"]
-    market_signal: dict = state["market_signal"]
+    research_signal: dict = state["research_signal"]
     campaign_goal: str = state["campaign_goal"]
     channels: list[str] = state["channels"]
     agent_run_id: str = state["agent_run_id"]
 
     try:
         # Build a compact retrieval query from the signal context
-        gaps = " ".join(market_signal.get("market_gaps", [])[:3])
-        angles = " ".join(market_signal.get("recommended_angles", [])[:3])
+        gaps = " ".join(research_signal.get("market_gaps", [])[:3])
+        angles = " ".join(research_signal.get("recommended_angles", [])[:3])
         query = (
             f"Campaign goal: {campaign_goal}. "
             f"Channels: {', '.join(channels)}. "

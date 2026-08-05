@@ -153,7 +153,7 @@ projectsRouter.post(
     const { user } = req as AuthedRequest
     const { workspace } = req as WorkspaceRequest
     const { project } = req as ProjectRequest
-    const { competitor_urls, industry_keywords } = req.body
+    const { competitor_urls, industry_keywords, research_questions } = req.body
 
     if (!Array.isArray(competitor_urls) || competitor_urls.length === 0) {
       res.status(400).json({ error: 'competitor_urls array is required', code: 'VALIDATION_ERROR' })
@@ -174,7 +174,11 @@ projectsRouter.post(
         project_id: project.id,
         agent_type: 'research',
         status: 'queued',
-        input_payload: { competitor_urls, industry_keywords: industry_keywords ?? '' },
+        input_payload: {
+          competitor_urls,
+          industry_keywords: industry_keywords ?? '',
+          research_questions: research_questions ?? '',
+        },
         triggered_by: user.id,
       })
       .select()
@@ -190,6 +194,7 @@ projectsRouter.post(
       project_id: project.id,
       competitor_urls,
       industry_keywords: industry_keywords ?? '',
+      research_questions: research_questions ?? '',
     })
 
     await supabase.from('agent_runs').update({ job_id }).eq('id', run_id)

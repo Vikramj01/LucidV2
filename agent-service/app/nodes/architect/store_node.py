@@ -20,8 +20,10 @@ logger = logging.getLogger(__name__)
 def store_node(state: "ArchitectState") -> dict:
     playbook_data: dict = state["playbook_data"]
     workspace_id: str = state["workspace_id"]
+    project_id: str = state["project_id"]
+    campaign_id: str = state["campaign_id"]
     agent_run_id: str = state["agent_run_id"]
-    market_signal_id: str = state["market_signal_id"]
+    research_signal_id: str = state["research_signal_id"]
     campaign_goal: str = state["campaign_goal"]
     channels: list[str] = state["channels"]
 
@@ -29,11 +31,16 @@ def store_node(state: "ArchitectState") -> dict:
         db = get_supabase()
         playbook_id = str(uuid.uuid4())
 
+        # project_id is also auto-derived from campaign_id by the
+        # campaign_playbooks_set_project_id DB trigger, but passing it
+        # explicitly here keeps this insert correct independent of that.
         row = {
             "id": playbook_id,
             "workspace_id": workspace_id,
+            "project_id": project_id,
+            "campaign_id": campaign_id,
             "agent_run_id": agent_run_id,
-            "market_signal_id": market_signal_id or None,
+            "research_signal_id": research_signal_id or None,
             "campaign_goal": campaign_goal,
             "channels": channels,
             "winning_angle": playbook_data["winning_angle"],

@@ -1,8 +1,9 @@
 """
-Unit tests for the Intel Agent pipeline nodes.
+Unit tests for the Research Agent pipeline nodes.
+(renamed + extended from tests/test_intel_agent.py — Sprint 10)
 
 No network, no Supabase, no Firecrawl, no Anthropic API calls.
-Run with: pytest tests/test_intel_agent.py -v
+Run with: pytest tests/test_research_agent.py -v
 """
 import sys
 import types
@@ -58,24 +59,26 @@ _firecrawl_mod.FirecrawlApp = _FakeFirecrawlApp
 # anthropic stub
 _anthropic_mod = _make_module("anthropic")
 
-VALID_SIGNAL = {
+VALID_EXTRACT = {
     "competitor_profiles": [
         {
-            "name": "Acme Corp",
             "url": "https://acme.com",
-            "positioning": "Leading B2B SaaS",
-            "key_messages": ["Fast", "Reliable"],
-            "icp": "Mid-market ops teams",
-            "weaknesses": ["No mobile app"],
+            "key_messaging": ["Fast", "Reliable"],
+            "target_audience": "Mid-market ops teams",
+            "content_themes": ["automation", "efficiency"],
+            "primary_cta": "Book a demo",
         }
     ],
+}
+
+VALID_SYNTHESIS = {
     "market_gaps": ["No AI assistant", "Poor onboarding"],
     "intent_triggers": ["Hiring ops staff", "Series B funding"],
     "recommended_angles": ["AI-first approach", "5-minute onboarding"],
 }
 
 
-def _make_anthropic_client(response_text: str = json.dumps(VALID_SIGNAL)):
+def _make_anthropic_client(response_text: str):
     client = MagicMock()
     msg = MagicMock()
     content_block = MagicMock()
@@ -84,7 +87,7 @@ def _make_anthropic_client(response_text: str = json.dumps(VALID_SIGNAL)):
     client.messages.create.return_value = msg
     return client
 
-_anthropic_mod.Anthropic = lambda **kwargs: _make_anthropic_client()
+_anthropic_mod.Anthropic = lambda **kwargs: _make_anthropic_client(json.dumps(VALID_EXTRACT))
 
 
 # ── Load nodes after stubs are in place ───────────────────────────────────────
@@ -98,12 +101,16 @@ def _load(rel_path: str, module_name: str):
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
     return mod
 
-scrape_mod = _load("app/nodes/intel/scrape_node.py", "scrape_node")
-extract_mod = _load("app/nodes/intel/extract_node.py", "extract_node")
-store_mod = _load("app/nodes/intel/store_node.py", "store_node")
+scrape_mod = _load("app/nodes/research/scrape_node.py", "research_scrape_node")
+extract_mod = _load("app/nodes/research/extract_node.py", "research_extract_node")
+synthesise_mod = _load("app/nodes/research/synthesise_node.py", "research_synthesise_node")
+write_mod = _load("app/nodes/research/write_node.py", "research_write_node")
+store_mod = _load("app/nodes/research/store_node.py", "research_store_node")
 
 scrape_node = scrape_mod.scrape_node
 extract_node = extract_mod.extract_node
+synthesise_node = synthesise_mod.synthesise_node
+write_node = write_mod.write_node
 store_node = store_mod.store_node
 
 
@@ -112,10 +119,14 @@ store_node = store_mod.store_node
 BASE_STATE = {
     "agent_run_id": "run-abc",
     "workspace_id": "ws-123",
+    "project_id": "proj-456",
     "competitor_urls": ["https://acme.com", "https://rival.io"],
     "industry_keywords": "B2B SaaS marketing automation",
+    "research_questions": "",
     "scrape_results": [],
-    "signal_data": {},
+    "competitor_profiles": [],
+    "synthesis_data": {},
+    "research_signal": {},
     "signal_id": "",
     "error": None,
 }
@@ -179,16 +190,28 @@ STATE_WITH_SCRAPES = {
 }
 
 
-def test_extract_node_returns_signal_data():
-    client = _make_anthropic_client(json.dumps(VALID_SIGNAL))
+def test_extract_node_returns_competitor_profiles():
+    client = _make_anthropic_client(json.dumps(VALID_EXTRACT))
     with patch.object(extract_mod.anthropic, "Anthropic", return_value=client):
         result = extract_node(STATE_WITH_SCRAPES)
-    assert "signal_data" in result
-    assert "competitor_profiles" in result["signal_data"]
+    assert "competitor_profiles" in result
+    profile = result["competitor_profiles"][0]
+    for key in ("url", "key_messaging", "target_audience", "content_themes", "primary_cta"):
+        assert key in profile
+
+
+def test_extract_node_folds_in_research_questions():
+    client = _make_anthropic_client(json.dumps(VALID_EXTRACT))
+    state = {**STATE_WITH_SCRAPES, "research_questions": "What's driving budget consolidation?"}
+    with patch.object(extract_mod.anthropic, "Anthropic", return_value=client):
+        result = extract_node(state)
+    assert "competitor_profiles" in result
+    user_content = client.messages.create.call_args.kwargs["messages"][0]["content"]
+    assert "budget consolidation" in user_content
 
 
 def test_extract_node_validates_required_keys():
-    incomplete = {"competitor_profiles": [], "market_gaps": []}
+    incomplete = {"competitor_profiles": [{"url": "https://acme.com"}]}  # missing most fields
     client = _make_anthropic_client(json.dumps(incomplete))
     with patch.object(extract_mod.anthropic, "Anthropic", return_value=client):
         result = extract_node(STATE_WITH_SCRAPES)
@@ -203,20 +226,83 @@ def test_extract_node_handles_invalid_json():
 
 
 def test_extract_node_strips_markdown_fences():
-    wrapped = f"```json\n{json.dumps(VALID_SIGNAL)}\n```"
+    wrapped = f"```json\n{json.dumps(VALID_EXTRACT)}\n```"
     client = _make_anthropic_client(wrapped)
     with patch.object(extract_mod.anthropic, "Anthropic", return_value=client):
         result = extract_node(STATE_WITH_SCRAPES)
-    assert "signal_data" in result
+    assert "competitor_profiles" in result
     assert not result.get("error")
+
+
+# ── synthesise_node tests ─────────────────────────────────────────────────────
+
+STATE_WITH_PROFILES = {
+    **BASE_STATE,
+    "competitor_profiles": VALID_EXTRACT["competitor_profiles"],
+}
+
+
+def test_synthesise_node_returns_synthesis_data():
+    client = _make_anthropic_client(json.dumps(VALID_SYNTHESIS))
+    with patch.object(synthesise_mod.anthropic, "Anthropic", return_value=client):
+        result = synthesise_node(STATE_WITH_PROFILES)
+    assert "synthesis_data" in result
+    for key in ("market_gaps", "intent_triggers", "recommended_angles"):
+        assert key in result["synthesis_data"]
+
+
+def test_synthesise_node_validates_required_keys():
+    incomplete = {"market_gaps": []}
+    client = _make_anthropic_client(json.dumps(incomplete))
+    with patch.object(synthesise_mod.anthropic, "Anthropic", return_value=client):
+        result = synthesise_node(STATE_WITH_PROFILES)
+    assert "error" in result
+
+
+def test_synthesise_node_handles_invalid_json():
+    client = _make_anthropic_client("not json")
+    with patch.object(synthesise_mod.anthropic, "Anthropic", return_value=client):
+        result = synthesise_node(STATE_WITH_PROFILES)
+    assert "error" in result
+
+
+# ── write_node tests ──────────────────────────────────────────────────────────
+
+STATE_WITH_SYNTHESIS = {
+    **BASE_STATE,
+    "scrape_results": [
+        {"url": "https://acme.com", "markdown": "", "title": "", "description": ""},
+        {"url": "https://rival.io", "markdown": "", "title": "", "description": ""},
+    ],
+    "competitor_profiles": VALID_EXTRACT["competitor_profiles"],
+    "synthesis_data": VALID_SYNTHESIS,
+}
+
+
+def test_write_node_assembles_research_signal():
+    result = write_node(STATE_WITH_SYNTHESIS)
+    assert "research_signal" in result
+    signal = result["research_signal"]
+    assert signal["competitor_profiles"] == VALID_EXTRACT["competitor_profiles"]
+    assert signal["market_gaps"] == VALID_SYNTHESIS["market_gaps"]
+    assert signal["intent_triggers"] == VALID_SYNTHESIS["intent_triggers"]
+    assert signal["recommended_angles"] == VALID_SYNTHESIS["recommended_angles"]
+    assert signal["sources"] == ["https://acme.com", "https://rival.io"]
+    assert signal["competitors_analysed"] == ["https://acme.com", "https://rival.io"]
 
 
 # ── store_node tests ──────────────────────────────────────────────────────────
 
 STATE_WITH_SIGNAL = {
     **BASE_STATE,
-    "scrape_results": [{"url": "https://acme.com", "markdown": "", "title": "", "description": ""}],
-    "signal_data": VALID_SIGNAL,
+    "research_signal": {
+        "competitors_analysed": ["https://acme.com"],
+        "competitor_profiles": VALID_EXTRACT["competitor_profiles"],
+        "market_gaps": VALID_SYNTHESIS["market_gaps"],
+        "intent_triggers": VALID_SYNTHESIS["intent_triggers"],
+        "recommended_angles": VALID_SYNTHESIS["recommended_angles"],
+        "sources": ["https://acme.com"],
+    },
 }
 
 _mark_complete = sys.modules["app.lib.agent_run"].mark_complete
@@ -238,6 +324,20 @@ def test_store_node_inserts_row_and_marks_complete():
     assert result["signal_id"]
     _mark_complete.assert_called_once_with("run-abc")
     _mark_failed.assert_not_called()
+
+
+def test_store_node_includes_project_id():
+    _supabase_mock.reset_mock()
+    insert_result = MagicMock()
+    insert_result.error = None
+    _supabase_mock.table.return_value.insert.return_value.execute.return_value = insert_result
+
+    store_node(STATE_WITH_SIGNAL)
+
+    insert_call = _supabase_mock.table.return_value.insert.call_args
+    row = insert_call[0][0]
+    assert row["project_id"] == "proj-456"
+    assert row["workspace_id"] == "ws-123"
 
 
 def test_store_node_marks_failed_on_db_error():

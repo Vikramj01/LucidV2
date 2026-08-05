@@ -77,7 +77,7 @@ Rules:
 
 
 def generate_node(state: "ArchitectState") -> dict:
-    market_signal: dict = state["market_signal"]
+    research_signal: dict = state["research_signal"]
     vault_chunks: list[dict] = state["vault_chunks"]
     campaign_goal: str = state["campaign_goal"]
     channels: list[str] = state["channels"]
@@ -94,8 +94,8 @@ def generate_node(state: "ArchitectState") -> dict:
 Goal: {campaign_goal}
 Channels: {', '.join(channels)}
 
-## Market Signal
-{json.dumps(market_signal, indent=2)}
+## Research Signal
+{json.dumps(research_signal, indent=2)}
 
 ## Brand Voice Vault Context
 {vault_context}
