@@ -1,14 +1,15 @@
 /**
  * Integration test: Redis queue → agent_runs DB round-trip.
  *
- * Verifies the full path for triggering an Intel Agent run:
- *   1. POST /api/workspaces/:id/agents/intel/run
- *   2. agent_runs row created in Supabase with status 'queued'
+ * Verifies the full path for triggering a Research Agent run:
+ *   1. POST /api/workspaces/:id/projects/:projectId/agents/research/run
+ *   2. agent_runs row created in Supabase with status 'queued', project_id set
  *   3. Job appears in Upstash Redis queue
  *
  * Run with:
  *   TEST_JWT=<supabase_jwt> \
  *   TEST_WORKSPACE_ID=<workspace_uuid> \
+ *   TEST_PROJECT_ID=<project_uuid> \
  *   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
  *   UPSTASH_REDIS_URL=... UPSTASH_REDIS_TOKEN=... \
  *   npx ts-node src/tests/integration/queue-roundtrip.test.ts
@@ -21,15 +22,16 @@ import { Redis } from '@upstash/redis'
 const API_BASE = process.env.TEST_API_URL ?? 'http://localhost:3001/api'
 const JWT = process.env.TEST_JWT
 const WORKSPACE_ID = process.env.TEST_WORKSPACE_ID
+const PROJECT_ID = process.env.TEST_PROJECT_ID
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const UPSTASH_REDIS_URL = process.env.UPSTASH_REDIS_URL
 const UPSTASH_REDIS_TOKEN = process.env.UPSTASH_REDIS_TOKEN
 
 async function run() {
-  if (!JWT || !WORKSPACE_ID || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY ||
+  if (!JWT || !WORKSPACE_ID || !PROJECT_ID || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY ||
       !UPSTASH_REDIS_URL || !UPSTASH_REDIS_TOKEN) {
-    console.log('⚠  Skipping integration test — set TEST_JWT, TEST_WORKSPACE_ID and all service env vars to run')
+    console.log('⚠  Skipping integration test — set TEST_JWT, TEST_WORKSPACE_ID, TEST_PROJECT_ID and all service env vars to run')
     return
   }
 
@@ -43,19 +45,22 @@ async function run() {
   // ── Step 1: drain any leftover jobs from previous test runs ──
   const beforeLen = await redis.llen(queueKey)
 
-  // ── Step 2: POST intel/run via the API ──
-  console.log('→ POST /agents/intel/run ...')
-  const res = await fetch(`${API_BASE}/workspaces/${WORKSPACE_ID}/agents/intel/run`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${JWT}`,
-    },
-    body: JSON.stringify({
-      competitor_urls: ['https://example.com'],
-      industry_keywords: 'B2B SaaS marketing',
-    }),
-  })
+  // ── Step 2: POST research/run via the API ──
+  console.log('→ POST /projects/:projectId/agents/research/run ...')
+  const res = await fetch(
+    `${API_BASE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agents/research/run`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${JWT}`,
+      },
+      body: JSON.stringify({
+        competitor_urls: ['https://example.com'],
+        industry_keywords: 'B2B SaaS marketing',
+      }),
+    }
+  )
 
   if (!res.ok) {
     const body = await res.text()
@@ -74,7 +79,7 @@ async function run() {
   // ── Step 3: verify agent_runs row in Supabase ──
   const { data: run, error } = await supabase
     .from('agent_runs')
-    .select('id, status, agent_type, workspace_id, job_id')
+    .select('id, status, agent_type, workspace_id, project_id, job_id')
     .eq('id', runId)
     .single()
 
@@ -93,6 +98,14 @@ async function run() {
     console.error(`✗ workspace_id mismatch: got ${run.workspace_id}`)
     process.exit(1)
   }
+  if (run.project_id !== PROJECT_ID) {
+    console.error(`✗ project_id mismatch: got ${run.project_id}`)
+    process.exit(1)
+  }
+  if (run.agent_type !== 'research') {
+    console.error(`✗ agent_type mismatch: got '${run.agent_type}', expected 'research'`)
+    process.exit(1)
+  }
 
   // ── Step 4: verify job landed in Redis ──
   const afterLen = await redis.llen(queueKey)
@@ -106,7 +119,7 @@ async function run() {
   const raw = await redis.lindex(queueKey, -1)
   if (raw) {
     const job = typeof raw === 'string' ? JSON.parse(raw) : raw
-    if (job.job_type !== 'intel_run') {
+    if (job.job_type !== 'research_run') {
       console.error(`✗ Job type mismatch: got '${job.job_type}'`)
       process.exit(1)
     }

@@ -92,7 +92,7 @@ vaultRouter.post(
         id: uuidv4(),
         workspace_id: workspace.id,
         name: name ?? url,
-        source_type: 'pdf',
+        source_type: 'url',
         status: 'queued',
         created_by: user.id,
       })

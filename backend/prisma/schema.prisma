@@ -57,11 +57,13 @@ enum AgentRunStatus {
 }
 
 enum AgentType {
-  intel
+  research
   architect
   builder
   analyst
   vault_ingest
+  icp
+  market_sizing
 
   @@map("agent_type")
 }
@@ -78,6 +80,9 @@ enum VaultDocStatus {
 enum VaultSourceType {
   pdf
   free_text
+  url
+  google_drive
+  notion
 
   @@map("vault_source_type")
 }
@@ -110,135 +115,258 @@ enum PlaybookStatus {
 }
 
 enum CreditActionType {
-  intel_run
+  research_run
   architect_run
   vault_ingest
+  icp_run
+  market_sizing_run
 
   @@map("credit_action_type")
+}
+
+enum ProjectStatus {
+  active
+  archived
+
+  @@map("project_status")
+}
+
+enum CampaignStatus {
+  active
+  completed
+  archived
+
+  @@map("campaign_status")
+}
+
+enum IntegrationProvider {
+  google_drive
+  notion
+
+  @@map("integration_provider")
+}
+
+enum IntegrationStatus {
+  connected
+  disconnected
+  error
+
+  @@map("integration_status")
 }
 
 // ---- Models ----
 
 model Organisation {
-  id                 String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  name               String
-  orgType            OrgType   @default(brand) @map("org_type")
-  creditBalance      Int       @default(100) @map("credit_balance")
-  creditCap          Int       @default(1000) @map("credit_cap")
-  stripeCustomerId   String?   @map("stripe_customer_id")
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name             String
+  orgType          OrgType  @default(brand) @map("org_type")
+  creditBalance    Int      @default(100) @map("credit_balance")
+  creditCap        Int      @default(1000) @map("credit_cap")
+  stripeCustomerId String?  @map("stripe_customer_id")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  workspaces         Workspace[]
-  profiles           Profile[]
-  creditLedger       CreditLedger[]
+  workspaces   Workspace[]
+  profiles     Profile[]
+  creditLedger CreditLedger[]
 
   @@map("organisations")
 }
 
 model Workspace {
-  id             String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  orgId          String     @map("org_id") @db.Uuid
-  name           String
-  description    String?
-  agentMode      AgentMode  @default(approval_gated) @map("agent_mode")
-  creditSoftCap  Int?       @map("credit_soft_cap")
-  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  orgId         String    @map("org_id") @db.Uuid
+  name          String
+  description   String?
+  agentMode     AgentMode @default(approval_gated) @map("agent_mode")
+  creditSoftCap Int?      @map("credit_soft_cap")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  organisation   Organisation     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  members        WorkspaceMember[]
-  vaultDocuments VaultDocument[]
-  agentRuns      AgentRun[]
-  marketSignals  MarketSignal[]
-  playbooks      CampaignPlaybook[]
-  creditLedger   CreditLedger[]
+  organisation        Organisation           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  members             WorkspaceMember[]
+  vaultDocuments      VaultDocument[]
+  agentRuns           AgentRun[]
+  researchSignals     ResearchSignal[]
+  playbooks           CampaignPlaybook[]
+  creditLedger        CreditLedger[]
+  projects            Project[]
+  campaigns           Campaign[]
+  icpProfiles         IcpProfile[]
+  marketSizingReports MarketSizingReport[]
+  integrations        WorkspaceIntegration[]
 
   @@map("workspaces")
 }
 
 model Profile {
-  id         String      @id @db.Uuid
-  email      String
-  fullName   String?     @map("full_name")
-  avatarUrl  String?     @map("avatar_url")
-  role       UserRole    @default(workspace_member)
-  status     UserStatus  @default(active)
-  orgId      String?     @map("org_id") @db.Uuid
-  uiTheme    UiTheme     @default(dark) @map("ui_theme")
-  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt  DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id        String     @id @db.Uuid
+  email     String
+  fullName  String?    @map("full_name")
+  avatarUrl String?    @map("avatar_url")
+  role      UserRole   @default(workspace_member)
+  status    UserStatus @default(active)
+  orgId     String?    @map("org_id") @db.Uuid
+  uiTheme   UiTheme    @default(dark) @map("ui_theme")
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  organisation       Organisation?      @relation(fields: [orgId], references: [id], onDelete: SetNull)
-  workspaceMembers   WorkspaceMember[]
-  vaultDocuments     VaultDocument[]
-  agentRuns          AgentRun[]
-  approvedPlaybooks  CampaignPlaybook[] @relation("ApprovedBy")
-  creditLedger       CreditLedger[]
+  organisation          Organisation?          @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  workspaceMembers      WorkspaceMember[]
+  vaultDocuments        VaultDocument[]
+  agentRuns             AgentRun[]
+  approvedPlaybooks     CampaignPlaybook[]     @relation("ApprovedBy")
+  creditLedger          CreditLedger[]
+  createdProjects       Project[]              @relation("ProjectCreatedBy")
+  createdCampaigns      Campaign[]             @relation("CampaignCreatedBy")
+  connectedIntegrations WorkspaceIntegration[] @relation("IntegrationConnectedBy")
 
   @@map("profiles")
 }
 
 model WorkspaceMember {
-  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  workspaceId String    @map("workspace_id") @db.Uuid
-  profileId   String    @map("profile_id") @db.Uuid
-  role        UserRole  @default(workspace_member)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  profileId   String   @map("profile_id") @db.Uuid
+  role        UserRole @default(workspace_member)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  profile     Profile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  profile   Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, profileId])
   @@map("workspace_members")
 }
 
-model VaultDocument {
-  id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  workspaceId   String          @map("workspace_id") @db.Uuid
-  name          String
-  sourceType    VaultSourceType @map("source_type")
-  filePath      String?         @map("file_path")
-  fileSizeBytes Int?            @map("file_size_bytes")
-  status        VaultDocStatus  @default(queued)
-  errorMessage  String?         @map("error_message")
-  chunkCount    Int?            @map("chunk_count")
-  createdBy     String          @map("created_by") @db.Uuid
-  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+model Project {
+  id          String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspaceId String        @map("workspace_id") @db.Uuid
+  name        String
+  description String?
+  status      ProjectStatus @default(active)
+  createdBy   String        @map("created_by") @db.Uuid
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  creator     Profile   @relation(fields: [createdBy], references: [id])
+  workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator             Profile              @relation("ProjectCreatedBy", fields: [createdBy], references: [id])
+  campaigns           Campaign[]
+  researchSignals     ResearchSignal[]
+  icpProfiles         IcpProfile[]
+  marketSizingReports MarketSizingReport[]
+  playbooks           CampaignPlaybook[]
+  agentRuns           AgentRun[]
+
+  @@map("projects")
+}
+
+model Campaign {
+  id           String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspaceId  String            @map("workspace_id") @db.Uuid
+  projectId    String            @map("project_id") @db.Uuid
+  name         String
+  campaignGoal CampaignGoal      @map("campaign_goal")
+  channels     CampaignChannel[]
+  status       CampaignStatus    @default(active)
+  createdBy    String            @map("created_by") @db.Uuid
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator   Profile            @relation("CampaignCreatedBy", fields: [createdBy], references: [id])
+  playbooks CampaignPlaybook[]
+  agentRuns AgentRun[]
+
+  @@map("campaigns")
+}
+
+model VaultDocument {
+  id              String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspaceId     String          @map("workspace_id") @db.Uuid
+  name            String
+  sourceType      VaultSourceType @map("source_type")
+  filePath        String?         @map("file_path")
+  fileSizeBytes   Int?            @map("file_size_bytes")
+  status          VaultDocStatus  @default(queued)
+  errorMessage    String?         @map("error_message")
+  chunkCount      Int?            @map("chunk_count")
+  createdBy       String          @map("created_by") @db.Uuid
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  integrationId   String?         @map("integration_id") @db.Uuid
+  externalFileId  String?         @map("external_file_id")
+  externalFileUrl String?         @map("external_file_url")
+
+  workspace   Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator     Profile               @relation(fields: [createdBy], references: [id])
+  integration WorkspaceIntegration? @relation(fields: [integrationId], references: [id])
 
   @@map("vault_documents")
 }
 
-model AgentRun {
-  id            String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  workspaceId   String         @map("workspace_id") @db.Uuid
-  agentType     AgentType      @map("agent_type")
-  status        AgentRunStatus @default(queued)
-  jobId         String?        @map("job_id")
-  inputPayload  Json           @default("{}") @map("input_payload")
-  errorMessage  String?        @map("error_message")
-  creditsUsed   Int            @default(0) @map("credits_used")
-  startedAt     DateTime?      @map("started_at") @db.Timestamptz
-  completedAt   DateTime?      @map("completed_at") @db.Timestamptz
-  triggeredBy   String         @map("triggered_by") @db.Uuid
-  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz
+model WorkspaceIntegration {
+  id                    String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspaceId           String              @map("workspace_id") @db.Uuid
+  provider              IntegrationProvider
+  status                IntegrationStatus   @default(connected)
+  accessTokenEncrypted  String              @map("access_token_encrypted")
+  refreshTokenEncrypted String?             @map("refresh_token_encrypted")
+  tokenExpiresAt        DateTime?           @map("token_expires_at") @db.Timestamptz
+  externalAccountId     String?             @map("external_account_id")
+  externalAccountLabel  String?             @map("external_account_label")
+  scopes                String[]            @default([])
+  connectedBy           String              @map("connected_by") @db.Uuid
+  connectedAt           DateTime            @default(now()) @map("connected_at") @db.Timestamptz
+  lastSyncedAt          DateTime?           @map("last_synced_at") @db.Timestamptz
+  errorMessage          String?             @map("error_message")
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  workspace     Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  triggeredByProfile Profile     @relation(fields: [triggeredBy], references: [id])
-  marketSignal  MarketSignal?
-  playbook      CampaignPlaybook?
-  creditLedger  CreditLedger[]
+  // NOTE: accessTokenEncrypted/refreshTokenEncrypted/tokenExpiresAt are not
+  // readable by the `authenticated` Postgres role (see migration 009) — only
+  // service_role (backend/agent-service) can select them. Never expose these
+  // fields through a route that forwards the caller's own JWT.
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  connector      Profile         @relation("IntegrationConnectedBy", fields: [connectedBy], references: [id])
+  vaultDocuments VaultDocument[]
+
+  @@map("workspace_integrations")
+}
+
+model AgentRun {
+  id           String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspaceId  String         @map("workspace_id") @db.Uuid
+  projectId    String?        @map("project_id") @db.Uuid
+  campaignId   String?        @map("campaign_id") @db.Uuid
+  agentType    AgentType      @map("agent_type")
+  status       AgentRunStatus @default(queued)
+  jobId        String?        @map("job_id")
+  inputPayload Json           @default("{}") @map("input_payload")
+  errorMessage String?        @map("error_message")
+  creditsUsed  Int            @default(0) @map("credits_used")
+  startedAt    DateTime?      @map("started_at") @db.Timestamptz
+  completedAt  DateTime?      @map("completed_at") @db.Timestamptz
+  triggeredBy  String         @map("triggered_by") @db.Uuid
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  workspace          Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project            Project?            @relation(fields: [projectId], references: [id])
+  campaign           Campaign?           @relation(fields: [campaignId], references: [id])
+  triggeredByProfile Profile             @relation(fields: [triggeredBy], references: [id])
+  researchSignal     ResearchSignal?
+  playbook           CampaignPlaybook?
+  icpProfile         IcpProfile?
+  marketSizingReport MarketSizingReport?
+  creditLedger       CreditLedger[]
 
   @@map("agent_runs")
 }
 
-model MarketSignal {
+model ResearchSignal {
   id                  String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   workspaceId         String   @map("workspace_id") @db.Uuid
+  projectId           String   @map("project_id") @db.Uuid
   agentRunId          String   @unique @map("agent_run_id") @db.Uuid
   competitorsAnalysed String[] @map("competitors_analysed")
   competitorProfiles  Json     @default("[]") @map("competitor_profiles")
@@ -248,34 +376,89 @@ model MarketSignal {
   sources             String[]
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  agentRun   AgentRun  @relation(fields: [agentRunId], references: [id])
-  playbooks  CampaignPlaybook[]
+  workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project             Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  agentRun            AgentRun             @relation(fields: [agentRunId], references: [id])
+  icpProfiles         IcpProfile[]
+  marketSizingReports MarketSizingReport[]
+  playbooks           CampaignPlaybook[]
 
-  @@map("market_signals")
+  @@map("research_signals")
+}
+
+model IcpProfile {
+  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspaceId      String   @map("workspace_id") @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  agentRunId       String   @unique @map("agent_run_id") @db.Uuid
+  researchSignalId String?  @map("research_signal_id") @db.Uuid
+  firmographics    Json     @default("{}")
+  personas         Json     @default("[]")
+  painPoints       String[] @map("pain_points")
+  buyingTriggers   String[] @map("buying_triggers")
+  sources          String[]
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  workspace      Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  agentRun       AgentRun           @relation(fields: [agentRunId], references: [id])
+  researchSignal ResearchSignal?    @relation(fields: [researchSignalId], references: [id])
+  playbooks      CampaignPlaybook[]
+
+  @@map("icp_profiles")
+}
+
+model MarketSizingReport {
+  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspaceId      String   @map("workspace_id") @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  agentRunId       String   @unique @map("agent_run_id") @db.Uuid
+  researchSignalId String?  @map("research_signal_id") @db.Uuid
+  tamEstimate      Json     @map("tam_estimate")
+  samEstimate      Json     @map("sam_estimate")
+  somEstimate      Json     @map("som_estimate")
+  methodologyNotes String   @map("methodology_notes")
+  sources          String[]
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  workspace      Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  agentRun       AgentRun           @relation(fields: [agentRunId], references: [id])
+  researchSignal ResearchSignal?    @relation(fields: [researchSignalId], references: [id])
+  playbooks      CampaignPlaybook[]
+
+  @@map("market_sizing_reports")
 }
 
 model CampaignPlaybook {
-  id              String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  workspaceId     String         @map("workspace_id") @db.Uuid
-  agentRunId      String         @unique @map("agent_run_id") @db.Uuid
-  marketSignalId  String?        @map("market_signal_id") @db.Uuid
-  campaignGoal    CampaignGoal   @map("campaign_goal")
-  channels        CampaignChannel[]
-  winningAngle    String         @map("winning_angle")
-  targetPersona   String         @map("target_persona")
-  playbookContent Json           @default("{}") @map("playbook_content")
-  status          PlaybookStatus @default(draft)
-  approvedBy      String?        @map("approved_by") @db.Uuid
-  approvedAt      DateTime?      @map("approved_at") @db.Timestamptz
-  version         Int            @default(1)
-  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id                   String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  workspaceId          String            @map("workspace_id") @db.Uuid
+  projectId            String            @map("project_id") @db.Uuid
+  campaignId           String            @map("campaign_id") @db.Uuid
+  agentRunId           String            @unique @map("agent_run_id") @db.Uuid
+  researchSignalId     String?           @map("research_signal_id") @db.Uuid
+  icpProfileId         String?           @map("icp_profile_id") @db.Uuid
+  marketSizingReportId String?           @map("market_sizing_report_id") @db.Uuid
+  campaignGoal         CampaignGoal      @map("campaign_goal")
+  channels             CampaignChannel[]
+  winningAngle         String            @map("winning_angle")
+  targetPersona        String            @map("target_persona")
+  playbookContent      Json              @default("{}") @map("playbook_content")
+  status               PlaybookStatus    @default(draft)
+  approvedBy           String?           @map("approved_by") @db.Uuid
+  approvedAt           DateTime?         @map("approved_at") @db.Timestamptz
+  version              Int               @default(1)
+  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  agentRun      AgentRun      @relation(fields: [agentRunId], references: [id])
-  marketSignal  MarketSignal? @relation(fields: [marketSignalId], references: [id])
-  approver      Profile?      @relation("ApprovedBy", fields: [approvedBy], references: [id])
+  workspace          Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project            Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  campaign           Campaign            @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  agentRun           AgentRun            @relation(fields: [agentRunId], references: [id])
+  researchSignal     ResearchSignal?     @relation(fields: [researchSignalId], references: [id])
+  icpProfile         IcpProfile?         @relation(fields: [icpProfileId], references: [id])
+  marketSizingReport MarketSizingReport? @relation(fields: [marketSizingReportId], references: [id])
+  approver           Profile?            @relation("ApprovedBy", fields: [approvedBy], references: [id])
 
   @@map("campaign_playbooks")
 }

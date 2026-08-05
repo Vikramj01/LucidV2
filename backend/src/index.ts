@@ -6,8 +6,9 @@ import { organisationsRouter } from './routes/organisations'
 import { workspacesRouter } from './routes/workspaces'
 import { vaultRouter } from './routes/vault'
 import { uploadRouter } from './routes/upload'
-import { agentsRouter } from './routes/agents'
-import { outputsRouter } from './routes/outputs'
+import { projectsRouter } from './routes/projects'
+import { campaignsRouter } from './routes/campaigns'
+import { agentRunsRouter } from './routes/agent-runs'
 import { adminRouter } from './routes/admin'
 import { errorHandler } from './middleware/error'
 
@@ -26,8 +27,9 @@ app.use('/api/organisations', organisationsRouter)
 app.use('/api/workspaces', workspacesRouter)
 app.use('/api/workspaces/:id/vault', vaultRouter)
 app.use('/api/workspaces/:id/vault', uploadRouter)
-app.use('/api/workspaces/:id/agents', agentsRouter)
-app.use('/api/workspaces/:id', outputsRouter)
+app.use('/api/workspaces/:id/projects', projectsRouter)
+app.use('/api/workspaces/:id/projects/:projectId/campaigns', campaignsRouter)
+app.use('/api/workspaces/:id/agent-runs', agentRunsRouter)
 app.use('/api/admin', adminRouter)
 
 // 404 handler
