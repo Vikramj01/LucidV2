@@ -165,3 +165,4 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 - Never skip RLS. Test isolation between workspaces before shipping any feature.
 - Never use polling for real-time updates. Use Supabase Realtime channels.
 - Mission Control is read-only — it displays agent output. Vimi Chat is the only write surface for user intent.
+- Never use the Supabase MCP connector for Lucid. It is connected to a different project (AtlasV2), not Lucid's database. Write schema changes as SQL/Prisma in the repo; the user applies them to Lucid's database.
