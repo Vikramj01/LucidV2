@@ -3,17 +3,25 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import { useAgentStore } from '@/store/agent'
+import { useWorkspaceStore } from '@/store/workspace'
 
 interface CompetitorProfile {
   name: string
   url: string
   positioning: string
-  key_messages: string[]
-  icp: string
+  key_messaging: string[]
+  target_audience: string
+  primary_cta: string
   weaknesses: string[]
 }
 
-interface MarketSignal {
+interface ResearchFinding {
+  question: string
+  answer: string
+  sources: string[]
+}
+
+interface ResearchSignal {
   id: string
   created_at: string
   competitors_analysed: string[]
@@ -21,9 +29,12 @@ interface MarketSignal {
   market_gaps: string[]
   intent_triggers: string[]
   recommended_angles: string[]
+  // Absent on signals written before research questions existed
+  research_findings?: ResearchFinding[]
+  sources: string[]
 }
 
-function SignalCard({ signal }: { signal: MarketSignal }) {
+function SignalCard({ signal }: { signal: ResearchSignal }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -34,7 +45,7 @@ function SignalCard({ signal }: { signal: MarketSignal }) {
       >
         <div>
           <p className="text-sm font-medium text-[#E6EDF3]">
-            Market Signal
+            Research Signal
           </p>
           <p className="text-xs text-[#8B949E] mt-0.5">
             {signal.competitors_analysed.length} competitors ·{' '}
@@ -50,6 +61,26 @@ function SignalCard({ signal }: { signal: MarketSignal }) {
           <Section title="Market Gaps" items={signal.market_gaps} color="text-[#388BFD]" />
           <Section title="Intent Triggers" items={signal.intent_triggers} color="text-[#E3B341]" />
           <Section title="Recommended Angles" items={signal.recommended_angles} color="text-[#3FB950]" />
+
+          {/* Answers to the user's research questions */}
+          {(signal.research_findings ?? []).length > 0 && (
+            <div>
+              <p className="text-[11px] font-semibold text-[#8B949E] uppercase tracking-wider mt-3 mb-2">
+                Research Questions
+              </p>
+              <div className="space-y-2">
+                {(signal.research_findings ?? []).map((f, i) => (
+                  <div key={i} className="rounded border border-[#30363D] p-3">
+                    <p className="text-xs font-semibold text-[#E6EDF3]">{f.question}</p>
+                    <p className="text-xs text-[#8B949E] mt-1">{f.answer}</p>
+                    {f.sources.length > 0 && (
+                      <p className="text-[10px] text-[#484F58] mt-1">Sources: {f.sources.join(', ')}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Competitor profiles */}
           {signal.competitor_profiles.length > 0 && (
@@ -72,7 +103,18 @@ function SignalCard({ signal }: { signal: MarketSignal }) {
                       </a>
                     </div>
                     <p className="text-xs text-[#8B949E] mt-1">{c.positioning}</p>
-                    {c.weaknesses.length > 0 && (
+                    {c.target_audience && (
+                      <p className="text-[10px] text-[#8B949E] mt-1">Audience: {c.target_audience}</p>
+                    )}
+                    {(c.key_messaging ?? []).length > 0 && (
+                      <p className="text-[10px] text-[#8B949E] mt-1">
+                        Messaging: {c.key_messaging.join(' · ')}
+                      </p>
+                    )}
+                    {c.primary_cta && (
+                      <p className="text-[10px] text-[#8B949E] mt-1">CTA: {c.primary_cta}</p>
+                    )}
+                    {(c.weaknesses ?? []).length > 0 && (
                       <p className="text-[10px] text-[#F85149] mt-1">
                         Weaknesses: {c.weaknesses.join(', ')}
                       </p>
@@ -114,27 +156,43 @@ function Section({
   )
 }
 
-export function IntelTab({ workspaceId }: { workspaceId: string }) {
-  const [signals, setSignals] = useState<MarketSignal[]>([])
+export function ResearchTab({ workspaceId }: { workspaceId: string }) {
+  const [signals, setSignals] = useState<ResearchSignal[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const intelStatus = useAgentStore((s) => s.intelStatus)
+  const researchStatus = useAgentStore((s) => s.researchStatus)
+  const projectId = useWorkspaceStore((s) => s.projectId)
+  const projectName = useWorkspaceStore((s) => s.projectName)
 
   useEffect(() => {
+    if (!projectId) {
+      setSignals([])
+      setLoading(false)
+      return
+    }
     setLoading(true)
-    api.outputs.listSignals(workspaceId)
-      .then((data) => setSignals(data as MarketSignal[]))
+    setError(null)
+    api.projects.listResearchSignals(workspaceId, projectId)
+      .then((data) => setSignals(data as ResearchSignal[]))
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [workspaceId, intelStatus]) // refetch when intel agent completes
+  }, [workspaceId, projectId, researchStatus]) // refetch when the research agent completes
 
-  if (loading) return <EmptyState message="Loading market signals..." />
+  if (!projectId) {
+    return (
+      <EmptyState
+        message="No project selected."
+        hint="Ask Vimi to start a research project — research is shared by every campaign in it."
+      />
+    )
+  }
+  if (loading) return <EmptyState message="Loading research signals..." />
   if (error) return <EmptyState message={`Error: ${error}`} />
   if (signals.length === 0) {
     return (
       <EmptyState
-        message="No market signals yet."
-        hint="Ask Vimi to run the Intel Agent to analyse your competitors."
+        message={`No research for ${projectName ?? 'this project'} yet.`}
+        hint="Ask Vimi to run the Research Agent to analyse your competitors."
       />
     )
   }
@@ -142,7 +200,7 @@ export function IntelTab({ workspaceId }: { workspaceId: string }) {
   return (
     <div className="p-6 space-y-3">
       <h2 className="text-xs font-semibold text-[#8B949E] uppercase tracking-wider">
-        Market Signals ({signals.length})
+        Research Signals · {projectName} ({signals.length})
       </h2>
       {signals.map((s) => (
         <SignalCard key={s.id} signal={s} />

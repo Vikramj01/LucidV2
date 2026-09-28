@@ -55,6 +55,27 @@ export class ApiError extends Error {
   }
 }
 
+export interface ProjectSummary {
+  id: string
+  name: string
+  status: string
+  created_at: string
+}
+
+export interface CampaignSummary {
+  id: string
+  project_id: string
+  name: string
+  campaign_goal: string
+  channels: string[]
+  status: string
+  created_at: string
+}
+
+function campaignPath(workspaceId: string, projectId: string, campaignId: string) {
+  return `/workspaces/${workspaceId}/projects/${projectId}/campaigns/${campaignId}`
+}
+
 // ---- Organisations ----
 
 export const api = {
@@ -144,52 +165,84 @@ export const api = {
     },
   },
 
-  agents: {
-    runIntel: (
+  projects: {
+    list: (workspaceId: string) =>
+      request<ProjectSummary[]>(`/workspaces/${workspaceId}/projects`),
+
+    create: (workspaceId: string, body: { name: string; description?: string }) =>
+      request<ProjectSummary>(`/workspaces/${workspaceId}/projects`, { method: 'POST', body }),
+
+    runResearch: (
       workspaceId: string,
-      body: { competitor_urls: string[]; industry_keywords?: string }
+      projectId: string,
+      body: { competitor_urls: string[]; industry_keywords?: string; research_questions?: string[] }
     ) =>
       request<{ id: string; status: string; job_id: string }>(
-        `/workspaces/${workspaceId}/agents/intel/run`,
+        `/workspaces/${workspaceId}/projects/${projectId}/agents/research/run`,
         { method: 'POST', body }
       ),
+
+    listResearchSignals: (workspaceId: string, projectId: string) =>
+      request<unknown[]>(`/workspaces/${workspaceId}/projects/${projectId}/research-signals`),
+
+    getResearchSignal: (workspaceId: string, projectId: string, sigId: string) =>
+      request<unknown>(`/workspaces/${workspaceId}/projects/${projectId}/research-signals/${sigId}`),
+  },
+
+  campaigns: {
+    list: (workspaceId: string, projectId: string) =>
+      request<CampaignSummary[]>(`/workspaces/${workspaceId}/projects/${projectId}/campaigns`),
+
+    create: (
+      workspaceId: string,
+      projectId: string,
+      body: { name: string; campaign_goal: string; channels: string[] }
+    ) =>
+      request<CampaignSummary>(`/workspaces/${workspaceId}/projects/${projectId}/campaigns`, {
+        method: 'POST',
+        body,
+      }),
 
     runArchitect: (
       workspaceId: string,
-      body: { market_signal_id?: string; campaign_goal: string; channels: string[] }
+      projectId: string,
+      campaignId: string,
+      body: { research_signal_id?: string } = {}
     ) =>
       request<{ id: string; status: string; job_id: string }>(
-        `/workspaces/${workspaceId}/agents/architect/run`,
+        `${campaignPath(workspaceId, projectId, campaignId)}/agents/architect/run`,
         { method: 'POST', body }
       ),
 
-    listRuns: (workspaceId: string) =>
-      request<unknown[]>(`/workspaces/${workspaceId}/agents/runs`),
+    listPlaybooks: (workspaceId: string, projectId: string, campaignId: string) =>
+      request<unknown[]>(`${campaignPath(workspaceId, projectId, campaignId)}/playbooks`),
 
-    getRun: (workspaceId: string, runId: string) =>
-      request<unknown>(`/workspaces/${workspaceId}/agents/runs/${runId}`),
-  },
+    getPlaybook: (workspaceId: string, projectId: string, campaignId: string, pbId: string) =>
+      request<unknown>(`${campaignPath(workspaceId, projectId, campaignId)}/playbooks/${pbId}`),
 
-  outputs: {
-    listSignals: (workspaceId: string) =>
-      request<unknown[]>(`/workspaces/${workspaceId}/market-signals`),
-
-    getSignal: (workspaceId: string, sigId: string) =>
-      request<unknown>(`/workspaces/${workspaceId}/market-signals/${sigId}`),
-
-    listPlaybooks: (workspaceId: string) =>
-      request<unknown[]>(`/workspaces/${workspaceId}/playbooks`),
-
-    getPlaybook: (workspaceId: string, pbId: string) =>
-      request<unknown>(`/workspaces/${workspaceId}/playbooks/${pbId}`),
-
-    approvePlaybook: (workspaceId: string, pbId: string) =>
-      request<unknown>(`/workspaces/${workspaceId}/playbooks/${pbId}/approve`, {
+    approvePlaybook: (workspaceId: string, projectId: string, campaignId: string, pbId: string) =>
+      request<unknown>(`${campaignPath(workspaceId, projectId, campaignId)}/playbooks/${pbId}/approve`, {
         method: 'PATCH',
       }),
 
-    exportPlaybook: (workspaceId: string, pbId: string, format: 'markdown' | 'json' = 'json') =>
-      request<unknown>(`/workspaces/${workspaceId}/playbooks/${pbId}/export?format=${format}`),
+    exportPlaybook: (
+      workspaceId: string,
+      projectId: string,
+      campaignId: string,
+      pbId: string,
+      format: 'markdown' | 'json' = 'json'
+    ) =>
+      request<unknown>(
+        `${campaignPath(workspaceId, projectId, campaignId)}/playbooks/${pbId}/export?format=${format}`
+      ),
+  },
+
+  agentRuns: {
+    list: (workspaceId: string) =>
+      request<unknown[]>(`/workspaces/${workspaceId}/agent-runs`),
+
+    get: (workspaceId: string, runId: string) =>
+      request<unknown>(`/workspaces/${workspaceId}/agent-runs/${runId}`),
   },
 
   admin: {

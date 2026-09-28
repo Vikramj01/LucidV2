@@ -265,6 +265,8 @@ CREATE TABLE research_signals (
   market_gaps           TEXT[] NOT NULL DEFAULT '{}',
   intent_triggers       TEXT[] NOT NULL DEFAULT '{}',
   recommended_angles    TEXT[] NOT NULL DEFAULT '{}',
+  research_questions    TEXT[] NOT NULL DEFAULT '{}', -- open-ended questions the user asked
+  research_findings     JSONB NOT NULL DEFAULT '[]',  -- [{ question, answer, sources[] }]
   sources               TEXT[] NOT NULL DEFAULT '{}', -- cited URLs
   created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -273,10 +275,14 @@ CREATE TABLE research_signals (
 -- [
 --   {
 --     "url": "string",
+--     "name": "string",
+--     "positioning": "string",
 --     "key_messaging": ["string"],
 --     "target_audience": "string",
 --     "content_themes": ["string"],
---     "primary_cta": "string"
+--     "primary_cta": "string",
+--     "weaknesses": ["string"],
+--     "research_notes": ["string"]
 --   }
 -- ]
 

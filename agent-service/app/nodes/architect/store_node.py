@@ -1,6 +1,7 @@
 """
 store_node: persist the generated Campaign Playbook to campaign_playbooks
-and mark the agent_run as complete.
+(scoped to its Project and Campaign), record its credit cost, and mark the
+agent_run as complete.
 """
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from app.lib.supabase import get_supabase
 from app.lib.agent_run import mark_complete, mark_failed
+from app.lib.credits import record_credit
 
 if TYPE_CHECKING:
     from app.graphs.architect_agent import ArchitectState
@@ -21,7 +23,9 @@ def store_node(state: "ArchitectState") -> dict:
     playbook_data: dict = state["playbook_data"]
     workspace_id: str = state["workspace_id"]
     agent_run_id: str = state["agent_run_id"]
-    market_signal_id: str = state["market_signal_id"]
+    project_id: str = state["project_id"]
+    campaign_id: str = state["campaign_id"]
+    research_signal_id: str = state["research_signal"]["id"]
     campaign_goal: str = state["campaign_goal"]
     channels: list[str] = state["channels"]
 
@@ -33,7 +37,9 @@ def store_node(state: "ArchitectState") -> dict:
             "id": playbook_id,
             "workspace_id": workspace_id,
             "agent_run_id": agent_run_id,
-            "market_signal_id": market_signal_id or None,
+            "project_id": project_id,
+            "campaign_id": campaign_id,
+            "research_signal_id": research_signal_id,
             "campaign_goal": campaign_goal,
             "channels": channels,
             "winning_angle": playbook_data["winning_angle"],
@@ -47,6 +53,7 @@ def store_node(state: "ArchitectState") -> dict:
         if hasattr(result, "error") and result.error:
             raise RuntimeError(f"Insert error: {result.error}")
 
+        record_credit(agent_run_id, workspace_id, state["org_id"], "architect_run")
         mark_complete(agent_run_id)
 
         logger.info(

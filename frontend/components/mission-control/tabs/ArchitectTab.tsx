@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import { useAgentStore } from '@/store/agent'
+import { useWorkspaceStore } from '@/store/workspace'
 
 interface ChannelPlan {
   channel: string
@@ -50,6 +51,8 @@ function ApprovalGate({
 }) {
   const [approving, setApproving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const projectId = useWorkspaceStore((s) => s.projectId)
+  const campaignId = useWorkspaceStore((s) => s.campaignId)
 
   if (status === 'approved') {
     return (
@@ -63,7 +66,8 @@ function ApprovalGate({
     setApproving(true)
     setError(null)
     try {
-      await api.outputs.approvePlaybook(workspaceId, playbookId)
+      if (!projectId || !campaignId) throw new Error('No campaign selected')
+      await api.campaigns.approvePlaybook(workspaceId, projectId, campaignId, playbookId)
       onApproved()
     } catch (e) {
       setError(String(e))
@@ -199,14 +203,23 @@ export function ArchitectTab({ workspaceId }: { workspaceId: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const architectStatus = useAgentStore((s) => s.architectStatus)
+  const projectId = useWorkspaceStore((s) => s.projectId)
+  const campaignId = useWorkspaceStore((s) => s.campaignId)
+  const campaignName = useWorkspaceStore((s) => s.campaignName)
 
   useEffect(() => {
+    if (!projectId || !campaignId) {
+      setPlaybooks([])
+      setLoading(false)
+      return
+    }
     setLoading(true)
-    api.outputs.listPlaybooks(workspaceId)
+    setError(null)
+    api.campaigns.listPlaybooks(workspaceId, projectId, campaignId)
       .then((data) => setPlaybooks(data as Playbook[]))
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [workspaceId, architectStatus])
+  }, [workspaceId, projectId, campaignId, architectStatus])
 
   function handleApproved(id: string) {
     setPlaybooks((prev) =>
@@ -214,13 +227,21 @@ export function ArchitectTab({ workspaceId }: { workspaceId: string }) {
     )
   }
 
+  if (!projectId || !campaignId) {
+    return (
+      <EmptyState
+        message="No campaign selected."
+        hint="Once research is done, ask Vimi to create a campaign and build its playbook."
+      />
+    )
+  }
   if (loading) return <EmptyState message="Loading playbooks..." />
   if (error) return <EmptyState message={`Error: ${error}`} />
   if (playbooks.length === 0) {
     return (
       <EmptyState
-        message="No campaign playbooks yet."
-        hint="Ask Vimi to run the Architect Agent once Intel has completed."
+        message={`No playbooks for ${campaignName ?? 'this campaign'} yet.`}
+        hint="Ask Vimi to run the Architect Agent for this campaign."
       />
     )
   }
@@ -228,7 +249,7 @@ export function ArchitectTab({ workspaceId }: { workspaceId: string }) {
   return (
     <div className="p-6 space-y-3">
       <h2 className="text-xs font-semibold text-[#8B949E] uppercase tracking-wider">
-        Campaign Playbooks ({playbooks.length})
+        Campaign Playbooks · {campaignName} ({playbooks.length})
       </h2>
       {playbooks.map((p) => (
         <PlaybookCard

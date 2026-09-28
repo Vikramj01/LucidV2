@@ -25,6 +25,7 @@ _make_module("app.lib")
 _make_module("app.lib.settings")
 _make_module("app.lib.supabase")
 _make_module("app.lib.agent_run")
+_make_module("app.lib.credits")
 
 _settings = MagicMock()
 _settings.openai_api_key = "fake-oai-key"
@@ -37,6 +38,7 @@ sys.modules["app.lib.supabase"].get_supabase = lambda: _supabase_mock
 sys.modules["app.lib.agent_run"].mark_running = MagicMock()
 sys.modules["app.lib.agent_run"].mark_complete = MagicMock()
 sys.modules["app.lib.agent_run"].mark_failed = MagicMock()
+sys.modules["app.lib.credits"].record_credit = MagicMock()
 
 # openai stub
 _openai_mod = _make_module("openai")
@@ -113,8 +115,8 @@ store_node = store_mod.store_node
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
-MARKET_SIGNAL = {
-    "id": "ms-001",
+RESEARCH_SIGNAL = {
+    "id": "rs-001",
     "market_gaps": ["No AI assistant", "Poor onboarding"],
     "recommended_angles": ["AI-first approach", "5-minute onboarding"],
     "intent_triggers": ["Hiring ops staff"],
@@ -124,10 +126,12 @@ MARKET_SIGNAL = {
 BASE_STATE = {
     "agent_run_id": "run-xyz",
     "workspace_id": "ws-456",
-    "market_signal_id": "ms-001",
+    "org_id": "org-9",
+    "project_id": "proj-7",
+    "campaign_id": "camp-3",
     "campaign_goal": "leads",
     "channels": ["linkedin", "email"],
-    "market_signal": MARKET_SIGNAL,
+    "research_signal": RESEARCH_SIGNAL,
     "vault_chunks": [],
     "playbook_data": {},
     "playbook_id": "",
@@ -136,6 +140,7 @@ BASE_STATE = {
 
 _mark_complete = sys.modules["app.lib.agent_run"].mark_complete
 _mark_failed = sys.modules["app.lib.agent_run"].mark_failed
+_record_credit = sys.modules["app.lib.credits"].record_credit
 
 
 # ── retrieve_node tests ───────────────────────────────────────────────────────
@@ -240,6 +245,7 @@ def test_store_node_inserts_row_and_marks_complete():
     _supabase_mock.reset_mock()
     _mark_complete.reset_mock()
     _mark_failed.reset_mock()
+    _record_credit.reset_mock()
 
     insert_result = MagicMock()
     insert_result.error = None
@@ -249,6 +255,13 @@ def test_store_node_inserts_row_and_marks_complete():
 
     assert "playbook_id" in result
     assert result["playbook_id"]
+    row = _supabase_mock.table.return_value.insert.call_args[0][0]
+    assert row["workspace_id"] == "ws-456"
+    assert row["project_id"] == "proj-7"
+    assert row["campaign_id"] == "camp-3"
+    assert row["research_signal_id"] == "rs-001"
+    assert "market_signal_id" not in row
+    _record_credit.assert_called_once_with("run-xyz", "ws-456", "org-9", "architect_run")
     _mark_complete.assert_called_once_with("run-xyz")
     _mark_failed.assert_not_called()
 

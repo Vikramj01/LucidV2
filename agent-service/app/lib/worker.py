@@ -1,7 +1,10 @@
 import asyncio
 import json
 import logging
+from pydantic import ValidationError
+
 from app.lib.redis import get_redis
+from app.models.jobs import PAYLOAD_MODELS, RedisJob
 
 logger = logging.getLogger(__name__)
 
@@ -36,23 +39,44 @@ async def start_worker() -> None:
             await asyncio.sleep(1)
 
 
+def validate_job(job: dict) -> dict:
+    """
+    Validate the job envelope and its job_type's payload.
+
+    Returns the job with its payload normalised (defaults filled in).
+    Raises pydantic.ValidationError on a malformed job.
+    """
+    envelope = RedisJob.model_validate(job)
+    payload = PAYLOAD_MODELS[envelope.job_type].model_validate(envelope.payload)
+    return {**envelope.model_dump(), "payload": payload.model_dump()}
+
+
 async def dispatch(job: dict) -> None:
     job_type = job.get("job_type")
     job_id = job.get("job_id", "unknown")
     logger.info("Dispatching job %s (type=%s)", job_id, job_type)
 
     try:
+        job = validate_job(job)
+    except ValidationError as exc:
+        logger.error("Job %s rejected — invalid job: %s", job_id, exc)
+        _try_mark_failure(job, f"Invalid job: {exc}")
+        return
+
+    try:
         if job_type == "vault_ingest":
             from app.graphs.vault_ingest import run_vault_ingest
             await run_vault_ingest(job)
-        elif job_type == "intel_run":
-            from app.graphs.intel_agent import run_intel_agent
-            await run_intel_agent(job)
+        elif job_type == "research_run":
+            from app.graphs.research_agent import run_research_agent
+            await run_research_agent(job)
         elif job_type == "architect_run":
             from app.graphs.architect_agent import run_architect_agent
             await run_architect_agent(job)
         else:
-            logger.warning("Unknown job_type: %s", job_type)
+            # icp_run and market_sizing_run land in Sprint 11
+            logger.warning("No handler yet for job_type: %s", job_type)
+            _try_mark_failure(job, f"Job type {job_type} is not supported yet")
     except Exception as exc:
         logger.exception("Job %s failed during dispatch: %s", job_id, exc)
         # Best-effort failure marking — individual graphs handle their own failures,

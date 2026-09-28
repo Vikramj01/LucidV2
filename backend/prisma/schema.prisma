@@ -373,6 +373,8 @@ model ResearchSignal {
   marketGaps          String[] @map("market_gaps")
   intentTriggers      String[] @map("intent_triggers")
   recommendedAngles   String[] @map("recommended_angles")
+  researchQuestions   String[] @default([]) @map("research_questions")
+  researchFindings    Json     @default("[]") @map("research_findings")
   sources             String[]
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
 

@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { use } from 'react'
 import { useAgentStore } from '@/store/agent'
 import { useChatStore } from '@/store/chat'
+import { useWorkspaceStore } from '@/store/workspace'
 import { createClient } from '@/lib/supabase/client'
 import { MissionControlCanvas } from '@/components/mission-control/MissionControlCanvas'
 import { VimiChatPanel } from '@/components/chat/VimiChatPanel'
@@ -14,10 +15,15 @@ export default function WorkspaceDashboardPage({
   params: Promise<{ workspaceId: string }>
 }) {
   const { workspaceId } = use(params)
-  const { setIntelStatus, setArchitectStatus, intelStatus, architectStatus } = useAgentStore()
+  const { setResearchStatus, setArchitectStatus, researchStatus, architectStatus } = useAgentStore()
   const { phase, setPhase } = useChatStore()
-  const prevIntelStatus = useRef<string>(intelStatus)
+  const enterWorkspace = useWorkspaceStore((s) => s.enterWorkspace)
+  const prevResearchStatus = useRef<string>(researchStatus)
   const prevArchitectStatus = useRef<string>(architectStatus)
+
+  useEffect(() => {
+    enterWorkspace(workspaceId)
+  }, [workspaceId, enterWorkspace])
 
   // Realtime: subscribe to agent_runs changes for this workspace
   useEffect(() => {
@@ -39,8 +45,8 @@ export default function WorkspaceDashboardPage({
             status: string
             id: string
           }
-          if (run.agent_type === 'intel') {
-            setIntelStatus(run.status as 'queued' | 'running' | 'complete' | 'failed', run.id)
+          if (run.agent_type === 'research') {
+            setResearchStatus(run.status as 'queued' | 'running' | 'complete' | 'failed', run.id)
           } else if (run.agent_type === 'architect') {
             setArchitectStatus(run.status as 'queued' | 'running' | 'complete' | 'failed', run.id)
           }
@@ -49,19 +55,19 @@ export default function WorkspaceDashboardPage({
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [workspaceId, setIntelStatus, setArchitectStatus])
+  }, [workspaceId, setResearchStatus, setArchitectStatus])
 
   // Auto-advance chat phases on agent completion
   useEffect(() => {
     if (
-      prevIntelStatus.current !== 'complete' &&
-      intelStatus === 'complete' &&
-      phase === 'INTEL_RUNNING'
+      prevResearchStatus.current !== 'complete' &&
+      researchStatus === 'complete' &&
+      phase === 'RESEARCH_RUNNING'
     ) {
       setPhase('ARCHITECT_SETUP')
     }
-    prevIntelStatus.current = intelStatus
-  }, [intelStatus, phase, setPhase])
+    prevResearchStatus.current = researchStatus
+  }, [researchStatus, phase, setPhase])
 
   useEffect(() => {
     if (

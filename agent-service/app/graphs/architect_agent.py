@@ -1,5 +1,6 @@
 """
-Architect Agent graph — Sprint 5.
+Architect Agent graph — Sprint 5, repointed to research_signals in Sprint 10
+(full v2.0 rework with ICP / Market Sizing inputs lands in Sprint 12).
 
 Flow:
   retrieve_node → generate_node → store_node → END
@@ -7,7 +8,7 @@ Flow:
                  → END            → END
 
 retrieve_node: embed query → retrieve_vault_context RPC → vault_chunks
-generate_node: Claude Sonnet (market signal + vault context) → playbook JSON
+generate_node: Claude Sonnet (research signal + vault context) → playbook JSON
 store_node:    insert campaign_playbooks → mark_complete
 """
 from __future__ import annotations
@@ -30,11 +31,13 @@ class ArchitectState(TypedDict):
     # ── inputs ─────────────────────────────────────────────────────────────
     agent_run_id: str
     workspace_id: str
-    market_signal_id: str
+    org_id: str
+    project_id: str
+    campaign_id: str
     campaign_goal: str
     channels: list[str]
     # ── fetched at runtime ─────────────────────────────────────────────────
-    market_signal: dict          # loaded from market_signals table
+    research_signal: dict        # loaded from research_signals table
     # ── pipeline state ─────────────────────────────────────────────────────
     vault_chunks: list[dict]     # set by retrieve_node
     playbook_data: dict          # set by generate_node
@@ -66,40 +69,43 @@ def _build_graph() -> StateGraph:
 _graph = _build_graph()
 
 
-def _load_market_signal(market_signal_id: str, workspace_id: str) -> dict:
-    """Fetch the market_signals row; raises on not found."""
+def _load_research_signal(
+    workspace_id: str, project_id: str, research_signal_id: str | None
+) -> dict:
+    """Fetch the given research signal, or the Project's latest if none given; raises if absent."""
     db = get_supabase()
-    result = (
-        db.table("market_signals")
+    query = (
+        db.table("research_signals")
         .select("*")
-        .eq("id", market_signal_id)
         .eq("workspace_id", workspace_id)
-        .single()
-        .execute()
+        .eq("project_id", project_id)
     )
+    if research_signal_id:
+        query = query.eq("id", research_signal_id)
+    else:
+        query = query.order("created_at", desc=True)
+    result = query.limit(1).execute()
     if not result.data:
-        raise ValueError(f"market_signal {market_signal_id} not found for workspace {workspace_id}")
-    return result.data
+        target = research_signal_id or "latest"
+        raise ValueError(f"research signal ({target}) not found for project {project_id}")
+    return result.data[0]
 
 
 async def run_architect_agent(job: dict) -> None:
-    payload = job.get("payload", {})
-    agent_run_id = payload.get("agent_run_id", "")
-    workspace_id = job.get("workspace_id", "")
-    market_signal_id: str = payload.get("market_signal_id", "")
-    campaign_goal: str = payload.get("campaign_goal", "awareness")
-    channels: list[str] = payload.get("channels", [])
-
-    if not agent_run_id:
-        logger.error("run_architect_agent: missing agent_run_id in job %s", job.get("job_id"))
-        return
+    """Run the Architect graph for a validated architect_run job (see worker.dispatch)."""
+    payload = job["payload"]
+    agent_run_id: str = payload["agent_run_id"]
+    workspace_id: str = job["workspace_id"]
+    project_id: str = payload["project_id"]
 
     mark_running(agent_run_id)
 
     try:
-        market_signal = _load_market_signal(market_signal_id, workspace_id)
+        research_signal = _load_research_signal(
+            workspace_id, project_id, payload.get("research_signal_id")
+        )
     except Exception as exc:
-        error_msg = f"run_architect_agent: could not load market signal — {exc}"
+        error_msg = f"run_architect_agent: could not load research signal — {exc}"
         logger.exception(error_msg)
         mark_failed(agent_run_id, error_msg)
         return
@@ -107,10 +113,12 @@ async def run_architect_agent(job: dict) -> None:
     initial_state: ArchitectState = {
         "agent_run_id": agent_run_id,
         "workspace_id": workspace_id,
-        "market_signal_id": market_signal_id,
-        "campaign_goal": campaign_goal,
-        "channels": channels,
-        "market_signal": market_signal,
+        "org_id": job["org_id"],
+        "project_id": project_id,
+        "campaign_id": payload["campaign_id"],
+        "campaign_goal": payload["campaign_goal"],
+        "channels": payload["channels"],
+        "research_signal": research_signal,
         "vault_chunks": [],
         "playbook_data": {},
         "playbook_id": "",
@@ -125,6 +133,7 @@ async def run_architect_agent(job: dict) -> None:
                 "run_architect_agent: pipeline failed agent_run_id=%s error=%s",
                 agent_run_id, final_state["error"],
             )
+            mark_failed(agent_run_id, final_state["error"])
         else:
             logger.info(
                 "run_architect_agent: complete agent_run_id=%s playbook_id=%s",

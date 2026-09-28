@@ -2,15 +2,15 @@
 
 import { useState } from 'react'
 import { OverviewTab } from './tabs/OverviewTab'
-import { IntelTab } from './tabs/IntelTab'
+import { ResearchTab } from './tabs/ResearchTab'
 import { ArchitectTab } from './tabs/ArchitectTab'
 import { VaultTab } from './tabs/VaultTab'
 
-type Tab = 'overview' | 'intel' | 'architect' | 'vault'
+type Tab = 'overview' | 'research' | 'architect' | 'vault'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
-  { id: 'intel', label: 'Intel' },
+  { id: 'research', label: 'Research' },
   { id: 'architect', label: 'Architect' },
   { id: 'vault', label: 'Vault' },
 ]
@@ -46,7 +46,7 @@ export function MissionControlCanvas({ workspaceId }: { workspaceId: string }) {
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'overview' && <OverviewTab workspaceId={workspaceId} />}
-        {activeTab === 'intel' && <IntelTab workspaceId={workspaceId} />}
+        {activeTab === 'research' && <ResearchTab workspaceId={workspaceId} />}
         {activeTab === 'architect' && <ArchitectTab workspaceId={workspaceId} />}
         {activeTab === 'vault' && <VaultTab workspaceId={workspaceId} />}
       </div>

@@ -4,7 +4,8 @@
  * Verifies the full path for triggering a Research Agent run:
  *   1. POST /api/workspaces/:id/projects/:projectId/agents/research/run
  *   2. agent_runs row created in Supabase with status 'queued', project_id set
- *   3. Job appears in Upstash Redis queue
+ *   3. Job appears in Upstash Redis queue with a payload matching agent-service's
+ *      ResearchRunPayload
  *
  * Run with:
  *   TEST_JWT=<supabase_jwt> \
@@ -58,6 +59,7 @@ async function run() {
       body: JSON.stringify({
         competitor_urls: ['https://example.com'],
         industry_keywords: 'B2B SaaS marketing',
+        research_questions: ['What is driving budget consolidation?'],
       }),
     }
   )
@@ -125,6 +127,18 @@ async function run() {
     }
     if (job.workspace_id !== WORKSPACE_ID) {
       console.error(`✗ Job workspace_id mismatch`)
+      process.exit(1)
+    }
+    // Payload must satisfy agent-service's ResearchRunPayload (app/models/jobs.py)
+    const p = job.payload ?? {}
+    const payloadOk =
+      p.agent_run_id === runId &&
+      p.project_id === PROJECT_ID &&
+      Array.isArray(p.competitor_urls) && p.competitor_urls.length >= 1 && p.competitor_urls.length <= 5 &&
+      typeof p.industry_keywords === 'string' &&
+      Array.isArray(p.research_questions) && p.research_questions.length === 1
+    if (!payloadOk) {
+      console.error('✗ Job payload does not match ResearchRunPayload:', p)
       process.exit(1)
     }
     console.log('✓ Redis job structure valid:', {

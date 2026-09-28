@@ -1,5 +1,5 @@
 """
-generate_node: send market signal + vault context to Claude Sonnet and produce
+generate_node: send research signal + vault context to Claude Sonnet and produce
 a structured Campaign Playbook JSON.
 
 Output shape matches the campaign_playbooks table:
@@ -36,7 +36,7 @@ You are Vimi, an expert B2B marketing strategist at ViMi Digital. You create \
 precise, actionable campaign playbooks for B2B brands.
 
 You will be given:
-1. A market signal analysis (competitor intelligence, market gaps, recommended angles)
+1. A research signal (competitor intelligence, market gaps, recommended angles)
 2. Brand voice context from the client's Brand Voice Vault
 3. Campaign parameters (goal, channels)
 
@@ -66,7 +66,7 @@ Return ONLY a valid JSON object — no markdown fences, no explanation — match
 }
 
 Rules:
-- winning_angle must come from the recommended_angles in the market signal
+- winning_angle must come from the recommended_angles in the research signal
 - channel_plans must include one entry per channel provided in campaign parameters
 - proof_points: 3-5 items grounded in the brand voice vault context
 - kpis: 2-3 measurable metrics per channel
@@ -77,7 +77,7 @@ Rules:
 
 
 def generate_node(state: "ArchitectState") -> dict:
-    market_signal: dict = state["market_signal"]
+    research_signal: dict = state["research_signal"]
     vault_chunks: list[dict] = state["vault_chunks"]
     campaign_goal: str = state["campaign_goal"]
     channels: list[str] = state["channels"]
@@ -94,8 +94,8 @@ def generate_node(state: "ArchitectState") -> dict:
 Goal: {campaign_goal}
 Channels: {', '.join(channels)}
 
-## Market Signal
-{json.dumps(market_signal, indent=2)}
+## Research Signal
+{json.dumps(research_signal, indent=2)}
 
 ## Brand Voice Vault Context
 {vault_context}

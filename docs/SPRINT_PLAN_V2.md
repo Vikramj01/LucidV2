@@ -37,30 +37,37 @@
 **Goal:** A Research job triggered through the v2.0 API runs and writes a `research_signals` row scoped to its Project. The frontend compiles against the v2.0 API again.
 
 ### Monday Sep 28
-- [ ] Agent-service: rename `nodes/intel/` → `nodes/research/` and `graphs/intel_agent.py` → `graphs/research_agent.py`
-- [ ] Agent-service: `worker.dispatch()` handles `research_run`; delete the `intel_run` branch
-- [ ] Agent-service: add Pydantic job payload models in `app/models/jobs.py` for all five v2.0 job types; reject malformed payloads by marking the run failed
-- [ ] Update `CLAUDE.md` to the v2.0 scope: four agents, Project/Campaign hierarchy, new table names
+- [x] Agent-service: rename `nodes/intel/` → `nodes/research/` and `graphs/intel_agent.py` → `graphs/research_agent.py`
+- [x] Agent-service: `worker.dispatch()` handles `research_run`; delete the `intel_run` branch
+- [x] Agent-service: add Pydantic job payload models in `app/models/jobs.py` for all five v2.0 job types; reject malformed payloads by marking the run failed
+- [x] Update `CLAUDE.md` to the v2.0 scope: four agents, Project/Campaign hierarchy, new table names
 
 ### Tuesday Sep 29
-- [ ] Research `scrape_node`: parallel Firecrawl scrape per URL (`asyncio.gather`); keep partial-failure handling
-- [ ] Research `extract_node`: per-competitor extraction that also takes the optional `research_questions`
-- [ ] Backend: `research/run` accepts `research_questions` (optional string array) and forwards it in the job payload and `input_payload`
+- [x] Research `scrape_node`: parallel Firecrawl scrape per URL (`asyncio.gather`); keep partial-failure handling
+- [x] Research `extract_node`: per-competitor extraction that also takes the optional `research_questions`
+- [x] Backend: `research/run` accepts `research_questions` (optional string array) and forwards it in the job payload and `input_payload`
 
 ### Wednesday Sep 30
-- [ ] Research `synthesise_node` (new): Claude compares competitors against each other → `market_gaps`, `intent_triggers`, `recommended_angles`
-- [ ] Research `write_node` (new): assemble the Research Signal JSON exactly as specified in PRD §4.4
-- [ ] Research `store_node`: write to `research_signals` with `workspace_id` and `project_id`; write `agent_runs` status and a `credit_ledger` row with `action_type = research_run`
+- [x] Research `synthesise_node` (new): Claude compares competitors against each other → `market_gaps`, `intent_triggers`, `recommended_angles`
+- [x] Research `write_node` (new): assemble the Research Signal JSON exactly as specified in PRD §4.4
+- [x] Research `store_node`: write to `research_signals` with `workspace_id` and `project_id`; write `agent_runs` status and a `credit_ledger` row with `action_type = research_run`
 
 ### Thursday Oct 1
-- [ ] Frontend `lib/api.ts`: replace the v1.0 agent/output calls with v2.0 ones: `projects.*`, `campaigns.*`, `research.run`, `researchSignals.list/get`, `playbooks.*` (campaign-scoped), `agentRuns.list/get`
-- [ ] Frontend: stop-gap fixes so `IntelTab` / `ArchitectTab` compile against the new client (full redesign in Sprint 13)
-- [ ] `shared/types`: add `ResearchSignal`, `Project`, `Campaign`; correct the `CampaignPlaybook` type to match `generate_node.py` output (PRD §12: code is ground truth)
+- [x] Frontend `lib/api.ts`: replace the v1.0 agent/output calls with v2.0 ones: `projects.*`, `campaigns.*`, `research.run`, `researchSignals.list/get`, `playbooks.*` (campaign-scoped), `agentRuns.list/get`
+- [x] Frontend: stop-gap fixes so `IntelTab` / `ArchitectTab` compile against the new client (full redesign in Sprint 13)
+- [x] `shared/types`: add `ResearchSignal`, `Project`, `Campaign`; correct the `CampaignPlaybook` type to match `generate_node.py` output (PRD §12: code is ground truth)
 
 ### Friday Oct 2
-- [ ] Update `tests/test_intel_agent.py` → `test_research_agent.py`; cover synthesise/write nodes and the research_questions path
-- [ ] Update the backend queue round-trip test to assert the `research_run` payload shape matches the Python model
-- [ ] Sprint review: POST `research/run` → worker picks up the job → `research_signals` row with the correct `project_id` → `agent_runs` shows complete → the frontend builds
+- [x] Update `tests/test_intel_agent.py` → `test_research_agent.py`; cover synthesise/write nodes and the research_questions path
+- [x] Update the backend queue round-trip test to assert the `research_run` payload shape matches the Python model
+- [ ] Sprint review: POST `research/run` → worker picks up the job → `research_signals` row with the correct `project_id` → `agent_runs` shows complete → the frontend builds *(code and unit tests done; the live run waits on applying `docs/migrations/20260928_research_signal_questions.sql`)*
+
+**Sprint 10 notes**
+- Pulled forward: Architect now reads `research_signals` (given ID or the Project's latest) and writes `project_id` / `campaign_id` / `research_signal_id`, so `architect_run` works end-to-end on research alone. Its ICP/Market Sizing inputs and `validate_node` stay in Sprint 12.
+- Fixed: a run whose early node failed (e.g. every scrape failed) was never marked failed and stayed "running"; the graph runners now mark it failed.
+- Stop-gap UI: the chat creates the Project (Research form) and the Campaign (Architect form); Mission Control's Research and Architect tabs read the selected Project/Campaign. Proper selectors land in Sprint 13, the full chat flow in Sprint 15.
+- Credit costs are placeholders (1 credit per action in `agent-service/app/lib/credits.py`) until pricing is decided.
+- Deferred to Sprint 11: Vault brand context in the Research synthesis (PRD §4.4 input), once `retrieve_vault_node` is shared.
 
 ---
 
@@ -71,6 +78,7 @@
 ### Monday Oct 5
 - [ ] Agent-service: shared `retrieve_research_node` (load the given `research_signal_id`, or the Project's latest; fail clearly if none exists)
 - [ ] Agent-service: pull vault retrieval out of `nodes/architect/retrieve_node.py` into a shared `retrieve_vault_node` (pgvector top-8) for ICP and Architect to use
+- [ ] Research `synthesise_node`: add Vault brand context so gaps and angles are relative to the brand (deferred from Sprint 10)
 
 ### Tuesday Oct 6
 - [ ] ICP `generate_node`: Claude → firmographics, personas, pain points, buying triggers (PRD §4.5 schema); validate output with a Pydantic model
@@ -115,6 +123,7 @@
 ### Thursday Oct 15
 - [ ] Audit log: record every agent trigger, playbook approval, export, and (later) integration connect/disconnect with `user_id` + timestamp (PRD §9). Add a table if the schema lacks one
 - [ ] Credit ledger rows carry `project_id` / `campaign_id` when applicable (PRD §4.10)
+- [ ] `vault_ingest` writes a credit_ledger row (it records none today); replace the placeholder credit costs with agreed pricing
 
 ### Friday Oct 16
 - [ ] Reuse check (backend integration test): two Campaigns under one Project, run Architect on both, and assert there's no second research/ICP/sizing run and that both playbooks reference the same source rows

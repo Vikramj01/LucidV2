@@ -159,15 +159,26 @@ export interface AgentRun {
 }
 
 // ---- Research Agent ----
-// (renamed + broadened from v1.0's Intel Agent — schema itself is
-// unchanged from v1.0's Market Signal, just project-scoped now)
+// (renamed + broadened from v1.0's Intel Agent — project-scoped, and adds
+// open-ended research questions with the answers synthesised for them).
+// Shapes match agent-service app/models/outputs.py.
 
 export interface CompetitorProfile {
   url: string
+  name: string
+  positioning: string
   key_messaging: string[]
   target_audience: string
   content_themes: string[]
   primary_cta: string
+  weaknesses: string[]
+  research_notes: string[]
+}
+
+export interface ResearchFinding {
+  question: string
+  answer: string
+  sources: string[]
 }
 
 export interface ResearchSignal {
@@ -180,6 +191,8 @@ export interface ResearchSignal {
   market_gaps: string[]
   intent_triggers: string[]
   recommended_angles: string[]
+  research_questions: string[]
+  research_findings: ResearchFinding[]
   sources: string[]
   created_at: string
 }
